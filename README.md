@@ -224,6 +224,46 @@ cd backend && .venv/bin/pytest
 
 See `backend/.env.example` for the complete configuration surface.
 
+### Demo data for manual API testing (development only)
+
+A dev-only, deterministic **synthetic** dataset can be seeded into the
+development PostgreSQL database so endpoints such as
+`POST /api/v1/attribution/investigate` can be exercised end-to-end by hand.
+
+> :warning: The addresses below are **fake** (`0x0000…0001`-style dummies) —
+> not real exchange/VASP wallets. The demo entity is tagged
+> `tag_source=demo_fixture_v1` and is clearly marked as a development fixture.
+> Never point these commands at a production database.
+
+The demo graph is: `SEED (0x…0001) → INTER (0x…0004) → VASP_A (0x…0064)`, with
+VASP_A registered as the synthetic entity *"Candidate VASP alpha"*. All hashes
+and timestamps are deterministic and match the test-factory conventions.
+
+```bash
+# Seed (idempotent — safe to re-run; duplicate rows are skipped)
+# Uses DATABASE_URL from backend/.env; creates missing tables if needed.
+make seed-demo
+
+# Optional: point at a different database instead of backend/.env
+cd backend && .venv/bin/python -m app.dev.seed_demo --database-url \
+  postgresql+asyncpg://<user>@localhost:5432/crypto_attribution
+
+# Manual end-to-end check
+curl -X POST http://127.0.0.1:8000/api/v1/attribution/investigate \
+  -H 'Content-Type: application/json' \
+  -d '{"chain_id":"ethereum","network":"mainnet",
+       "seed_address":"0x0000000000000000000000000000000000000001",
+       "max_hops":3}'
+```
+
+To remove **only the demo-owned rows** (leaving any other data untouched):
+
+```bash
+make reset-demo
+```
+
+See `backend/app/dev/` (fixtures + CLI) for details.
+
 ---
 
 ## 9. Contributing & Thesis Notes
