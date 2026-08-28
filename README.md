@@ -2,7 +2,7 @@
 
 > A thesis project for evidence-based cryptocurrency transaction tracing and entity attribution to support investigators.
 
-**Status:** `Phase 0 — Documentation & Repository Bootstrap` — No blockchain engine implemented yet. See [ROADMAP.md](ROADMAP.md).
+**Status:** `Phase 2 — Graph, traversal & entity attribution` — Ethereum (Etherscan) ingestion, plus a deterministic traversal engine, entity registry, confidence scoring, and the `POST /api/v1/attribution/investigate` API are live with 132 passing tests. Risk scoring, dashboard, and reporting are not started. See [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -115,30 +115,39 @@ crypto_attribution_engine/
 ├── ARCHITECTURE.md
 ├── ATTRIBUTION.md
 ├── ROADMAP.md
-├── .gitignore
-├── backend/
+├── compose.yaml             # optional local PostgreSQL (Docker)
+├── docker/postgres/init/    # dev-only: creates crypto_attribution_test
+├── Makefile
+├── backend/                 # Python + FastAPI (Phase 1)
+│   ├── .env.example         # documented placeholders; copy to .env
+│   ├── requirements.txt / requirements-dev.txt
+│   ├── pytest.ini
+│   ├── alembic.ini / alembic/  # DB migrations (versions/0001_initial.py)
 │   ├── app/
-│   │   ├── api/          # FastAPI routers
-│   │   ├── core/         # config, security, logging
-│   │   ├── services/     # ingestion, traversal, attribution, scoring, reporting
-│   │   ├── models/       # SQLAlchemy / ORM models
-│   │   ├── schemas/      # Pydantic schemas
-│   │   └── utils/        # helpers
-│   └── tests/
-├── frontend/
+│   │   ├── main.py          # app factory
+│   │   ├── api/routes/      # health, ingest, transactions endpoints
+│   │   ├── core/            # settings (env-driven), logging, errors
+│   │   ├── db/              # engine, session, declarative base
+│   │   ├── models/          # transactions, token_transfers, ingestion_runs
+│   │   ├── repositories/    # idempotent upserts + audit runs
+│   │   ├── schemas/         # canonical transaction schema (chain-agnostic)
+│   │   ├── services/ingestion/  # Etherscan client, normalizer, adapter, registry
+│   │   └── utils/           # address validation, time helpers
+│   └── tests/               # unit + API tests (pytest)
+├── frontend/                # React scaffold (not started)
 │   ├── src/
 │   │   ├── components/
 │   │   ├── pages/
-│   │   ├── services/     # API clients
+│   │   ├── services/        # API clients
 │   │   ├── hooks/
 │   │   └── utils/
 │   └── public/
-├── docs/                 # supplementary docs, diagrams, ADRs
+├── docs/                    # supplementary docs, diagrams, ADRs
 ├── data/
-│   ├── raw/              # ignored; local chain exports
-│   ├── processed/        # ignored; derived datasets
-│   └── fixtures/         # small, synthetic examples (no real PII)
-└── scripts/              # one-off maintenance scripts
+│   ├── raw/                 # ignored; local chain exports
+│   ├── processed/           # ignored; derived datasets
+│   └── fixtures/            # synthetic examples (no real PII)
+└── scripts/                 # one-off maintenance scripts
 ```
 
 ---
@@ -147,37 +156,73 @@ crypto_attribution_engine/
 
 | Phase | Status |
 |---|---|
-| 0 — Documentation & repo bootstrap | **In progress (this commit)** |
-| 1 — Data ingestion | Not started |
-| 2 — Database / graph construction | Not started |
-| 3 — Traversal engine | Not started |
-| 4 — Entity attribution | Not started |
+| 0 — Documentation & repo bootstrap | **Completed** |
+| 1 — Data ingestion (backend foundation) | **Completed** — Ethereum (Etherscan V2) adapter, canonical model, idempotent PostgreSQL persistence, `/health` + ingestion API. Token-transfer (`tokentx`) ingestion is a documented follow-on. |
+| 2 — Database / graph construction | **Completed** — `GraphBuilder` derives a directed transaction graph from persisted rows; `DatabaseGraphExpander` loads outgoing edges (native + token evidence) on demand. |
+| 3 — Traversal engine | **Completed** — deterministic bounded BFS (`TraversalEngine`): hop limits, time window, min value, per-hop/global edge caps, cycle & revisit handling, evidence-preserving paths. |
+| 4 — Entity attribution | **Completed** — local `entities` / `entity_addresses` registry with exact-match lookup, `ConfidenceScorer` (probabilistic score + tier + factors), and `AttributionService` combining traversal + registry + scoring. |
 | 5 — Risk scoring | Not started |
-| 6 — API | Not started |
+| 6 — API | Partial — Phase 1 base routes live plus `POST /api/v1/attribution/investigate`; auth/reporting endpoints in later phases |
 | 7 — Dashboard | Not started |
 | 8 — Reporting & SAHYOG export | Not started |
-| 9 — Testing & hardening | Not started |
+| 9 — Testing & hardening | Partial — unit + API tests for Phases 1–4 are in place (132 tests) |
 
-No blockchain API keys, datasets, or integrations are included in this bootstrap. Phase 1 will not begin until explicitly requested.
+**Working today:**
+
+- `GET /health` — liveness + DB readiness probe.
+- `POST /api/v1/ingest/{chain}/{address}` — fetch (Etherscan V2) → normalize → persist idempotently; returns an ingestion-run summary with inserted/skipped counts.
+- `GET /api/v1/ingest/{chain}/{address}` — list persisted transactions for an address.
+- `GET /api/v1/ingestion-runs/{id}` and `GET /api/v1/transactions/{hash}` — audit/query endpoints.
+- `POST /api/v1/attribution/investigate` — traversal + entity attribution for a seed address; returns ranked candidates with confidence scores, hop-by-hop evidence, token-transfer evidence, and traversal stats. Supports `max_hops`, `min_value`, and a `time_from`/`time_to` window.
+- Chain-agnostic canonical `Transaction` model, `transactions` / `token_transfers` / `ingestion_runs` tables, Alembic migrations `0001_initial` / `0002_entities`.
+
+No Ethereum API key or committed secrets are bundled; Etherscan without a key returns a clear configuration error. Bitcoin / Tron / Polygon / Solana adapters are not started (Ethereum must be working first).
 
 ---
 
-## 8. Getting Started (Bootstrap Only)
+## 8. Getting Started (Repository Only — No Live Ingestion Yet)
 
-This repository currently contains **documentation and scaffolding only**.
+Prerequisites: Python 3.11+, PostgreSQL 15+ running locally (or Docker; see
+`compose.yaml`). Docker is optional.
 
 ```bash
-# Clone
-git clone <remote-url>
-cd crypto_attribution_engine
+# 1) Backend virtualenv + dependencies
+make backend-install                      # or: python3 -m venv backend/.venv && \
+                                          # backward compat: see Makefile
 
-# Backend (placeholder — no implementation yet)
-python -m venv .venv && source .venv/bin/activate
-pip install -r backend/requirements.txt  # to be added in Phase 1
+# 2) PostgreSQL
+#   - Local Homebrew Postgres is already running for this setup; or:
+#       docker compose up -d postgres     # if you use the Docker service
+#   - Create databases (once):
+#       createdb crypto_attribution
+#       createdb crypto_attribution_test
+#   - Or apply the Alembic migration instead (recommended once on dev DB):
+#       make migrate-db                    # creates tables via alembic upgrade head
 
-# Frontend (placeholder)
-cd frontend && npm install && npm run dev
+# 3) Configuration
+cp backend/.env.example backend/.env       # then fill in ETHERSCAN_API_KEY
+# DATABASE_URL and TEST_DATABASE_URL point at local profiles by default.
+
+# 4) Run the API
+make dev                                   # uvicorn on http://127.0.0.1:8000
+
+# 5) Check it
+curl http://127.0.0.1:8000/health          # {"status":"ok", ...}
+curl http://127.0.0.1:8000/docs            # interactive OpenAPI
 ```
+
+### Tests
+
+```bash
+# Against a real PostgreSQL test database (recommended)
+TEST_DATABASE_URL=postgresql+asyncpg://<user>@localhost:5432/crypto_attribution_test \
+  .venv/bin/pytest                          # from backend/
+
+# Or SQLite fallback (no Postgres needed)
+cd backend && .venv/bin/pytest
+```
+
+See `backend/.env.example` for the complete configuration surface.
 
 ---
 

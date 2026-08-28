@@ -1,6 +1,6 @@
 # Architecture — Crypto Attribution Engine
 
-> Phase 0 blueprint. No implementation yet — this document is the build contract.
+> **As-built status: Phase 1 (backend foundation + Ethereum ingestion)**. This document is the living design contract; sections marked *Phase 1 (implemented)* describe code that exists in the repository, the rest describe planned components.
 
 ---
 
@@ -80,30 +80,50 @@
 
 ### 3.1 Blockchain APIs (External)
 
-- One adapter per chain (e.g., `bitcoin.py`, `ethereum.py` under `backend/app/services/ingestion/`).
-- Each adapter: `fetch_transactions(address, params) -> list[RawTx]`, `fetch_transaction(tx_hash) -> RawTx`, handling pagination, rate limits, and retries with exponential backoff.
-- No chain logic outside the adapter. Provider selection is deferred to Phase 1; adapters target publicly documented REST APIs.
+- One adapter per chain under `backend/app/services/ingestion/`.
+- **Phase 1 (implemented)** — Ethereum via the Etherscan V2 endpoint
+  (`https://api.etherscan.io/v2/api`, `chainid`-parameterized, API key via env).
+  `EtherscanClient` handles pagination (`page`/`offset` with `page_size` and
+  `max_pages` guards), rate-limit detection, and typed provider errors.
+- Each future adapter exposes the `ChainAdapter` protocol:
+  `get_normalized_transactions(address) -> list[Transaction]`, isolating all
+  chain/provider specifics behind a single interface.
+- No chain logic outside the adapter. Provider selection for Ethereum is
+  Etherscan (publicly documented REST API); other chains select providers in
+  their own phases.
 
-### 3.2 Ingestion Layer
+### 3.2 Ingestion Layer *(Phase 1 — implemented)*
 
 **Responsibilities**
 
-- Validate input (address format, chain, numeric bounds) via Pydantic schemas.
-- Call the appropriate chain adapter.
-- Normalize `RawTx` into a canonical `Transaction` model:
+- API boundaries validate chain + address via `app.utils.addresses`
+  (regex-based Ethereum validation, lowercase normalization; EIP-55 checksum
+  validation is a documented future enhancement).
+- `IngestionRegistry` maps a chain id → adapter. Only `ethereum` is registered.
+- `EthereumAdapter` fetches native (ETH) `txlist` records, then
+  `ethereum_normalizer` converts each raw record into the canonical model:
 
   ```
-  Transaction { tx_hash, chain_id, block_height, block_time, fee,
-                inputs: [{address, value}], outputs: [{address, value}]
-                // account-based chains: from_address, to_address, value
-              }
+  Transaction (canonical, blockchain-agnostic)
+    chain_id, network, tx_hash, block_number, block_hash, block_timestamp,
+    status, transaction_type, from_address, to_address,
+    value (str, base units), value_decimals, fee, input_data,
+    senders[], recipients[], token_transfers[],
+    source, fetched_at
   ```
-- Persist with provenance (`source`, `fetched_at`, `request_params`) and idempotent upserts on `tx_hash + chain_id`.
-- Cache recent fetches to respect rate limits; background refresh is out of scope for MVP.
+- `IngestionService` orchestrates: validate → create `ingestion_runs` audit
+  row → adapter fetch+normalize → `TransactionRepository.upsert_many`
+  (idempotent) → close the run with inserted/skipped counts.
+- Idempotency: `transactions` has a unique key `(chain_id, network, tx_hash)`;
+  re-ingesting an address inserts only missing hashes and records a fresh,
+  auditable ingestion run.
+- Token transfers (`tokentx`, ERC-20) are modeled (schema + `token_transfers`
+  table) but not yet fetched — a documented Phase 1 follow-on.
 
-**Module**: `backend/app/services/ingestion/` + `backend/app/schemas/`.
+**Modules**: `backend/app/services/ingestion/`, `backend/app/schemas/`,
+`backend/app/repositories/`, `backend/app/services/ingestion_service.py`.
 
-### 3.3 PostgreSQL — Primary Store
+### 3.3 PostgreSQL — Primary Store *(Phase 1 — implemented)*
 
 **Why PostgreSQL initially**
 
@@ -111,20 +131,29 @@
 - Relational integrity for investigations, users, and audit logs.
 - `ltree` / recursive CTEs can handle bounded traversals without a dedicated graph DB. A graph extension (e.g., Apache AGE) or external graph store is an optional later step, gated on benchmarks.
 
-**Core tables (planned)**
+**Implemented tables (Alembic `0001_initial`; async via asyncpg)**
+
+| Table | Purpose |
+|---|---|
+| `transactions` | Canonical tx model (JSON `senders`/`recipients`), unique `(chain_id, network, tx_hash)` idempotency key, address and time indexes |
+| `token_transfers` | ERC-20-style transfers (schema in place; ingestion is a follow-on) |
+| `ingestion_runs` | Audit trail per address ingestion: status + inserted/skipped counts |
+
+**Planned tables (later phases)**
 
 | Table | Purpose |
 |---|---|
 | `investigations` | Case container: seed address, chain, params, status, owner |
 | `addresses` | Normalized address + chain, first/last seen, derived entity pointer |
-| `transactions` | Canonical tx model + raw payload reference + provenance |
 | `transaction_edges` | Directed edges derived from transactions (one row per address→address transfer) |
 | `entities` | Entity catalog: category, name, risk tier, tag source/version |
 | `address_entity_map` | Address → entity attribution with confidence + evidence bundle |
-| `traces` / `trace_runs` | Traversal run metadata, parameters, snapshot IDs |
-| `reports` | Generated artifacts + payload hashes |
+| `traces` / `trace_runs` | Traversal run metadata, parameters, snapshot IDs (Phase 3) |
+| `reports` | Generated artifacts + payload hashes (Phase 8) |
 
-Migrations via Alembic (planned).
+Data access uses a small repository layer (`app/repositories/`): async
+sessions, `AsyncSessionFactory` owning engine + maker, no raw SQL outside
+migrations/health probe.
 
 ### 3.4 Transaction Graph Construction
 
@@ -170,24 +199,40 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) for the scoring model.
 
 **Module**: `backend/app/services/scoring/`.
 
-### 3.8 FastAPI Backend
+### 3.8 FastAPI Backend *(Phase 1 — implemented)*
 
 **Responsibilities**
 
-- REST API for investigations, traces, entities, and reports.
+- REST API for ingestion, investigations, traces, entities, and reports.
 - Authentication/authorization (planned: JWT or session; roles: investigator, reviewer, admin).
 - Async job handling for ingestion/trace runs (create job → poll status → fetch result).
 - Input validation (Pydantic), error mapping, rate limiting, and audit logging.
 
-**Planned route groups**
+**Implemented routes**
+
+```
+GET    /health                    — liveness + DB readiness
+POST   /api/v1/ingest/{chain}/{address}  — fetch -> normalize -> idempotent persist
+GET    /api/v1/ingest/{chain}/{address}  — list persisted txs for an address
+GET    /api/v1/ingestion-runs/{id}       — audit record for an ingest run
+GET    /api/v1/transactions/{tx_hash}    — fetch one canonical tx (address-aware chain)
+```
+
+**Planned route groups (later phases)**
 
 ```
 /api/v1/investigations   — CRUD + list
 /api/v1/traces           — create/run, status, results (graph + paths + scores)
 /api/v1/entities         — lookup, tag management (curated)
 /api/v1/reports          — generate PDF/JSON, SAHYOG payload, download
-/api/v1/health           — liveness/readiness
 ```
+
+**Implementation notes**
+
+- `app.main.create_app` is a factory (settings + `AsyncSessionFactory` + registry
+  are injected), so the app runs with `uvicorn app.main:create_app --factory`.
+- DB errors map to 5xx, validation/config failures to clean 4xx/5xx with JSON detail.
+- CORS middleware is config-driven (`CORS_ORIGINS`).
 
 **Module**: `backend/app/api/` + `backend/app/core/` (config, security, logging).
 
@@ -215,15 +260,16 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) for the scoring model.
 
 ## 4. Cross-Cutting Concerns
 
-### 4.1 Configuration
+### 4.1 Configuration *(Phase 1 — implemented)*
 
-- `backend/app/core/config.py` (Pydantic Settings) — DB URL, API keys, scoring weights, hop defaults. All secrets via environment variables; `.env` is gitignored.
+- `backend/app/core/config.py` (Pydantic Settings) — DB URLs, Etherscan API key/base URL/chain id/timeout/pagination, CORS origins, log level, DB auto-create. All secrets via environment variables; `.env` is gitignored. See `backend/.env.example` for the full surface.
 
 ### 4.2 Security
 
 - Input validation at the API boundary (Pydantic).
 - SQL via ORM / parameterized queries only.
 - No private key handling anywhere.
+- API keys live in env only; never logged.
 - Audit log for investigation mutations and exports.
 
 ### 4.3 Observability
@@ -231,18 +277,21 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) for the scoring model.
 - Structured logging (JSON) with correlation IDs per request/job.
 - Health endpoint; metrics endpoint as optional follow-on.
 
-### 4.4 Testing Strategy
+### 4.4 Testing Strategy *(Phase 1 — implemented)*
 
-- Unit tests for traversal, attribution, and scoring against synthetic fixtures (`data/fixtures/`).
-- API integration tests with a test database.
-- Frontend component tests for graph rendering and evidence drawer logic.
+- Pytest suite in `backend/tests/` — 59 tests covering normalizers, client (stubbed HTTP), address validation, canonical schema, repositories/idempotency, config, and API routes.
+- Runs against a real PostgreSQL test database (`TEST_DATABASE_URL`) or a SQLite in-memory fallback when unset; both green.
+- Ruff linting clean.
+- Profiling/attribution/scoring tests are deferred to their phases.
 
 ---
 
 ## 5. Deployment (Thesis Scope)
 
-- **Local development**: `uvicorn` for FastAPI, `vite dev` for React, local PostgreSQL (Docker Compose planned in Phase 1).
-- **No production deployment** in the bootstrap. A `docker-compose.yml` for local orchestration will be added when the first service is implemented.
+- **Local development (working today)**: `uvicorn app.main:create_app --factory`
+  for the API (see Makefile), local PostgreSQL. A `compose.yaml` + Postgres init
+  script are included for optional Docker local orchestration.
+- **No production deployment** in the bootstrap.
 
 ---
 

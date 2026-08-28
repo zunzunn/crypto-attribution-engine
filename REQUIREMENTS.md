@@ -1,6 +1,6 @@
 # Requirements — Crypto Attribution Engine
 
-> Thesis-scope specification. No blockchain engine is implemented in Phase 0; this document defines what the system must do when built.
+> Thesis-scope specification. Status legend: **[IMPLEMENTED]** = shipped in Phase 1; items without a marker are planned for their phase. An Ethereum Etherscan (V2) adapter is live; Bitcoin and other chains are not yet built.
 
 ---
 
@@ -28,7 +28,7 @@ The system helps an investigator start from a suspect/unhosted wallet address, t
 | ID | Requirement |
 |---|---|
 | FR-IN-01 | Accept a seed address, blockchain selector, and optional case metadata (case ID, investigator notes, date range). |
-| FR-IN-02 | Validate address format per chain before any network call; reject malformed input with a clear error. |
+| FR-IN-02 | Validate address format per chain before any network call; reject malformed input with a clear error. **[IMPLEMENTED — Ethereum]** |
 | FR-IN-03 | Allow configurable traversal parameters per investigation: max hops, time window, minimum value threshold, direction (forward; backward as optional extension). |
 | FR-IN-04 | Support manual entity-tag overrides by the investigator (with audit log of who/when). |
 
@@ -36,18 +36,18 @@ The system helps an investigator start from a suspect/unhosted wallet address, t
 
 | ID | Requirement |
 |---|---|
-| FR-CHAIN-01 | MVP must support at least **one UTXO chain** (e.g., Bitcoin) **and one account-based chain** (e.g., Ethereum) to demonstrate both models. Additional EVM-compatible chains may be added as adapters without changing the core pipeline. |
-| FR-CHAIN-02 | Chain support is adapter-based: each chain has an isolated ingestion/normalization module. Adding a chain does not require changes to traversal, attribution, or scoring logic. |
-| FR-CHAIN-03 | Token transfers (e.g., ERC-20) on account-based chains are in scope as a follow-on after native-asset tracing is stable. |
+| FR-CHAIN-01 | MVP must support at least **one UTXO chain** (e.g., Bitcoin) **and one account-based chain** (e.g., Ethereum). **[PARTIAL — Ethereum (account-based) live; Bitcoin/UTXO pending]** |
+| FR-CHAIN-02 | Chain support is adapter-based: each chain has an isolated ingestion/normalization module. **[IMPLEMENTED — registry + `ChainAdapter` interface; only `ethereum` registered]** |
+| FR-CHAIN-03 | Token transfers (e.g., ERC-20) are in scope as a follow-on after native-asset tracing is stable. **[MODELED ONLY — `token_transfers` table + schema exist; `tokentx` fetch is a documented follow-on]** |
 
-> No specific third-party API is mandated here. Adapters will target publicly documented blockchain data APIs; the exact provider is selected in Phase 1 and documented in `backend/app/services/ingestion/`.
+> Ethereum provider (chosen, live): **Etherscan API V2** — `https://api.etherscan.io/v2/api`, `chainid` param, key via env. See `backend/app/services/ingestion/ethereum_client.py`.
 
 ### 3.3 Data Requirements
 
 | ID | Requirement |
 |---|---|
-| FR-DATA-01 | Normalize all chain data into a common transaction model (tx hash, block height/time, inputs/outputs or from/to, value, fee, chain ID). |
-| FR-DATA-02 | Persist raw and normalized data with provenance: source API, fetch timestamp, and request parameters. |
+| FR-DATA-01 | Normalize all chain data into a common transaction model (tx hash, block height/time, inputs/outputs or from/to, value, fee, chain ID). **[IMPLEMENTED — canonical `Transaction` schema; `value` as base-unit string]** |
+| FR-DATA-02 | Persist raw and normalized data with provenance: source API, fetch timestamp, and request parameters. **[IMPLEMENTED — `source`/`fetched_at` on every tx + `ingestion_runs` audit rows]** |
 | FR-DATA-03 | Maintain entity/tag data separately from chain data; tags are versioned and source-attributed (e.g., public VASP address lists, investigator-curated). No tag is treated as authoritative ownership proof. |
 | FR-DATA-04 | Synthetic fixtures used for testing must be labeled as synthetic and contain no real PII or private keys. |
 

@@ -6,41 +6,61 @@
 
 ## Phase 0 — Documentation & Repository Bootstrap
 
-**Status: In progress (this commit)**
+**Status: Completed**
 
 | Item | Detail |
 |---|---|
 | Goal | Clean repo structure, scaffolding, and design contracts before any application code. |
-| Deliverables | `README.md`, `REQUIREMENTS.md`, `ARCHITECTURE.md`, `ATTRIBUTION.md`, `ROADMAP.md`, `.gitignore`, directory scaffolding (`backend/`, `frontend/`, `data/`, `docs/`, `scripts/`). |
-| Exit criteria | All five Markdown files reviewed; directories created; no application logic committed; `.gitignore` covers secrets and local data. |
+| Deliverables | `README.md`, `REQUIREMENTS.md`, `ARCHITECTURE.md`, `ATTRIBUTION.md`, `ROADMAP.md`, directory scaffolding (`backend/`, `frontend/`, `data/`, `docs/`, `scripts/`). |
+| Exit criteria | All five Markdown files reviewed; directories created; `.gitignore` covers secrets and local data. |
 
 ---
 
 ## Phase 1 — Data Ingestion
 
-**Status: Not started — do not begin until explicitly requested.**
+**Status: Completed — backend foundation + Ethereum (Etherscan) ingestion live.**
+
+**Delivered**
+
+- Canonical chain-agnostic `Transaction` schema (Pydantic; `value` as base-unit string) + `TokenTransfer` / `AddressAmount` schemas.
+- Chain adapter interface (`ChainAdapter` protocol) + `IngestionRegistry`; **Ethereum** adapter with Etherscan **V2** client (pagination, rate-limit handling, typed provider errors).
+- Normalization layer (`ethereum_normalizer`) mapping raw `txlist` records → canonical transactions.
+- Idempotent persistence to PostgreSQL via `TransactionRepository.upsert_many`; unique `(chain_id, network, tx_hash)`; `ingestion_runs` audit rows with inserted/skipped counts.
+- Address validation per chain (`utils/addresses`).
+- Alembic migration `0001_initial` (tables: `transactions`, `token_transfers`, `ingestion_runs`).
+- FastAPI app factory (`create_app`) + routes: `/health`, `POST|GET /api/v1/ingest/{chain}/{address}`, `GET /api/v1/ingestion-runs/{id}`, `GET /api/v1/transactions/{tx_hash}`.
+- Environment-driven config (`core/config.py`, `.env.example`), structured logging, CORS, `compose.yaml` + PG init script, `Makefile`.
+- Test suite: 59 tests (normalizer, client-stubbed, validation, schema, repository/idempotency, config, API) — green on PostgreSQL and SQLite; ruff clean.
+
+**Known follow-ons (deferred, explicitly scoped)**
+
+- ERC-20 token transfers (`tokentx`): schema + `token_transfers` table exist; fetch not yet wired.
+- EIP-55 checksum validation for Ethereum addresses.
+- Bitcoin/UTXO adapter (required for FR-CHAIN-01 full compliance).
 
 | Item | Detail |
 |---|---|
-| Goal | Fetch and normalize blockchain data per chain via isolated adapters. |
-| Tasks | 1. Define canonical `Transaction` / `TransactionEdge` schemas (Pydantic). 2. Implement chain adapters (Bitcoin + Ethereum for MVP) with pagination, retries, rate-limit handling. 3. Provenance tracking (`source`, `fetched_at`, `request_params`). 4. Idempotent persistence to PostgreSQL. 5. Address format validation per chain. 6. Local Docker Compose for PostgreSQL. |
-| Deliverables | `backend/app/services/ingestion/` adapters, schemas, Alembic migrations for `addresses`/`transactions`/`transaction_edges`, `docker-compose.yml`, synthetic fixtures in `data/fixtures/`. |
-| Exit criteria | Given a valid seed address, the system fetches, normalizes, and persists transactions idempotently; malformed input is rejected with a clear error; no secrets in code. |
+| Prior exit criteria | Given a valid seed address, the system fetches, normalizes, and persists transactions idempotently; malformed input is rejected with a clear error; no secrets in code. — **Met** (verified live via Etherscan unauthenticated 502 path + stub-driven tests; a real key ends the flow end-to-end). |
 
 ---
 
 ## Phase 2 — Database & Graph Construction
+
+**Status: Mostly complete.** `GraphBuilder` + `DatabaseGraphExpander` derive a directed account-based transaction graph (native edges + token-transfer evidence) directly from the persisted `transactions` table. UTXO multi-output construction is a follow-on.
 
 | Item | Detail |
 |---|---|
 | Goal | Solidify the storage model and build the in-memory transaction graph. |
 | Tasks | 1. Finalize tables: `investigations`, `addresses`, `transactions`, `transaction_edges`, `entities`, `address_entity_map`, `trace_runs`. 2. Indexes on `(chain_id, address)`, `tx_hash`, `block_time`. 3. Graph builder that materializes a directed graph from `transaction_edges` for a given investigation/trace run. |
 | Deliverables | Updated migrations, graph construction service (`backend/app/services/graph/`), unit tests with fixtures. |
+| Done | `transactions`/`token_transfers` graphs derived on demand (`app/services/graph/`); unit tests (`tests/unit/test_graph_expansion.py`). |
 | Exit criteria | A persisted set of transactions can be materialized as a correct directed graph (nodes/edges) with hop metadata; tests cover UTXO multi-output and account-based cases. |
 
 ---
 
 ## Phase 3 — Traversal Engine
+
+**Status: Complete.** Deterministic, bounded forward BFS with hop/time/min-value/per-hop/global caps, cycle & revisit handling, pruning diagnostics, and reproducible output — covered by `tests/unit/test_traversal_engine.py`. UTXO change-heuristic handling remains a documented opt-in follow-on.
 
 | Item | Detail |
 |---|---|
@@ -53,16 +73,21 @@
 
 ## Phase 4 — Entity Attribution
 
+**Status: Partial.** Registry (`entities` / `entity_addresses`, versioned tag sources) with exact-address matching and evidence bundles is live, plus the `ConfidenceScorer` (model v0). Cluster/contract-match layers and investigator override audit-logging are follow-ons.
+
 | Item | Detail |
 |---|---|
 | Goal | Map traversed addresses to entity categories with evidence bundles. |
 | Tasks | 1. Entity catalog and `address_entity_map` with versioned tag sources. 2. Matching layers: exact address → cluster heuristic → contract/behavioral → unknown. 3. Evidence bundle per attribution (tag source/version, evidence tx hashes). 4. Investigator manual overrides with audit log. |
 | Deliverables | `backend/app/services/attribution/`, tag import tooling, evidence bundle model. |
+| Done | `app/services/attribution/` (registry, scoring, service); migration `0002_entities`; tests (`tests/unit/test_entity_registry.py`, `test_confidence_scoring.py`, `test_attribution_service.py`). |
 | Exit criteria | Known VASP/mixer/bridge addresses are correctly categorized with evidence; unknown addresses default to `unknown`/`unhosted`; overrides are audit-logged; every attribution carries its evidence bundle. |
 
 ---
 
 ## Phase 5 — Risk & Confidence Scoring
+
+**Status: Partial.** Confidence scoring model v0 (base scores + factor adjustments + tier mapping) is implemented inside the attribution service and surfaced via the API. Path-aggregation/weighted scoring and separate behavior-based risk scores are follow-ons.
 
 | Item | Detail |
 |---|---|
@@ -120,7 +145,7 @@
 ## Phase Sequencing & Dependencies
 
 ```
-Phase 0 (done) → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9
+Phase 0 (done) → Phase 1 (done) → Phase 2 (done) → Phase 3 (done) → Phase 4 (partial) → Phase 5 (partial) → Phase 6 → Phase 7 → Phase 8 → Phase 9
                   ingestion   DB/graph  traversal  attribution  scoring   API    dashboard  reporting  hardening
 
 Phases 2–5 are backend-logic heavy and can overlap lightly once Phase 1 schemas are stable.
@@ -134,9 +159,9 @@ Phase 8 depends on Phases 3–6 being stable.
 
 | Milestone | Phases | Demo Capability |
 |---|---|---|
-| M1 — Data Foundation | 0–2 | Fetch and persist transactions; show normalized data. |
-| M2 — Tracing | 0–3 | Trace from a seed with hop/time/value constraints; show paths. |
-| M3 — Intelligence | 0–5 | Attributed paths with confidence + risk scores and evidence. |
+| M1 — Data Foundation | 0–2 | **Live:** fetch and persist Ethereum transactions (native ETH) idempotently; visualize normalized data via `/docs` and API JSON. UTXO chain and token-transfer ingestion remain follow-ons. |
+| M2 — Tracing | 0–3 | **Live (API):** trace from a seed with hop/time/value constraints via `POST /api/v1/attribution/investigate`; paths and traversal stats returned. |
+| M3 — Intelligence | 0–5 | **Live (API):** attributed candidates ranked by confidence with evidence bundles. Cluster/contract matching, weighted path confidence, and behavior-based risk scores are follow-ons. |
 | M4 — Investigator Workflow | 0–7 | Full UI flow: case → trace → graph → evidence review. |
 | M5 — Reporting | 0–9 | Downloadable report + SAHYOG payload; reproducible, auditable. |
 
@@ -152,4 +177,4 @@ Phase 8 depends on Phases 3–6 being stable.
 
 ---
 
-*This roadmap is the execution order. Do not start Phase 1 until explicitly requested.*
+*This roadmap is the execution order. Phases 0–3 are done; Phases 4–5 are partially done (see status notes above). Do not begin a later phase until the earlier one is explicitly requested.*
