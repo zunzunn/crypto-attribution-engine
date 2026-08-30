@@ -1,9 +1,12 @@
 """Attribution orchestration: traverse the derived graph, match discovered
-addresses against the entity registry, score confidence, and rank candidates.
+addresses against the entity registry, score confidence and risk, and rank
+candidates.
 
 Language discipline: we emit *known address matches* and *candidate VASPs*
 with *attribution confidence* - never a claim that an address owner has been
 definitively identified. Confidence here is attribution confidence only.
+Risk score answers ``how suspicious are the observed transaction behaviors?``
+and is completely separate from attribution confidence.
 """
 
 from __future__ import annotations
@@ -20,7 +23,8 @@ from app.schemas import (
     TraversalRequest,
 )
 from app.schemas.graph import GraphEdge
-from app.services.attribution.registry import AddressRegistry
+from app.schemas.risk import RiskScoringConfig
+from app.services.risk import assess_risk
 from app.services.attribution.scoring import SCORING_MODEL_VERSION, ConfidenceScorer
 from app.services.graph.repository import GraphExpander
 from app.services.traversal.engine import TraversalEngine
@@ -75,6 +79,14 @@ class AttributionService:
             addresses=discovered,
         )
 
+        # Build a list of matched entity objects for risk scoring.
+        # Each match from the registry has: entity, imported_at, and address.
+        matched_entities: list = []
+        for addr in discovered:
+            match = matches.get(addr)
+            if match is not None:
+                matched_entities.append(match)
+
         candidates: list[AttributionCandidate] = []
         for path in traversal.paths:
             match = matches.get(path.target_address)
@@ -115,11 +127,26 @@ class AttributionService:
             )
         )
 
+        # Run risk assessment using the same traversal and match data
+        # Determine hop count from traversal paths
+        max_hop_count = 0
+        if traversal.paths:
+            max_hop_count = max(path.hop_count for path in traversal.paths)
+
+        risk_assessment = assess_risk(
+            config=RiskScoringConfig(),  # uses all defaults
+            matched_entities=matched_entities,
+            hop_count=max_hop_count,
+            path_edges=[hop.edge for hop in traversal.paths[0].hops] if traversal.paths else [],
+            traversal_result=traversal,
+        )
+
         return AttributionInvestigationResponse(
             request=normalized,
             traversal=traversal,
             candidates=candidates,
             scoring_model_version=SCORING_MODEL_VERSION,
+            risk_assessment=risk_assessment,
             message=(
                 None
                 if candidates

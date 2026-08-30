@@ -14,6 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.risk import RiskAssessment, RiskLevel
 from app.schemas.traversal import EvidencePath, TraversalRequest, TraversalResult
 
 
@@ -96,6 +97,10 @@ class AttributionInvestigationResponse(BaseModel):
     traversal: TraversalResult
     candidates: list[AttributionCandidate] = Field(default_factory=list)
     scoring_model_version: str
+    risk_assessment: RiskAssessment = Field(
+        default_factory=RiskAssessment,
+        description="Behavior-based risk scoring for the investigated paths.",
+    )
     message: str | None = Field(
         default=None, description="Human note (e.g. no known-address matches found)"
     )

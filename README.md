@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-The Crypto Attribution Engine is an investigative support system that traces cryptocurrency fund flows originating from a suspect or unhosted wallet, identifies likely intermediary entities (exchanges/VASPs, mixers, bridges, swap services), and produces auditable, evidence-backed outputs for investigators.
+The Crypto Attribution Engine is an investigative support system that traces cryptocurrency fund flows originating from a suspect or unhosted wallet, identifies likely intermediary entities(exchanges/VASPs, mixers, bridges, swap services), and produces auditable, evidence-backed outputs for investigators.
 
 It does **not** claim to prove wallet ownership. It provides **probable attribution** with explicit confidence levels and linked evidence — suitable for further investigation and lawful information requests.
 
@@ -56,14 +56,14 @@ This project addresses these gaps with a single, auditable pipeline from ingesti
 
 ## 4. Planned Tech Stack
 
-| Layer | Choice | Rationale |
-|---|---|---|
-| Backend API | **Python 3.11+ + FastAPI** | Async-friendly, strong typing via Pydantic, good fit for data-heavy services. |
-| Storage (initial) | **PostgreSQL 15+** | Relational core for transactions, addresses, entities, investigations. Sufficient for thesis scale; graph extensions or a dedicated graph store can be introduced later if traversal performance demands it. |
-| Frontend | **React + TypeScript + Vite** | Modern, well-documented, large ecosystem. |
-| Graph visualization | **Cytoscape.js** | Mature, supports directed graphs, layouts, and investigator-friendly interactions. Kept unless a strong technical reason emerges (e.g., WebGL scale needs). |
-| Auth (planned) | JWT or session-based, role-gated | Investigator / reviewer roles. Exact choice deferred to API phase. |
-| Reporting | PDF generation from backend (e.g., WeasyPrint/ReportLab) + JSON export | Deterministic, server-side rendering. |
+| Layer               | Choice                                                                 | Rationale                                                                                                                                                                                                    |
+| ------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend API         | **Python 3.11+ + FastAPI**                                             | Async-friendly, strong typing via Pydantic, good fit for data-heavy services.                                                                                                                                |
+| Storage (initial)   | **PostgreSQL 15+**                                                     | Relational core for transactions, addresses, entities, investigations. Sufficient for thesis scale; graph extensions or a dedicated graph store can be introduced later if traversal performance demands it. |
+| Frontend            | **React + TypeScript + Vite**                                          | Modern, well-documented, large ecosystem.                                                                                                                                                                    |
+| Graph visualization | **Cytoscape.js**                                                       | Mature, supports directed graphs, layouts, and investigator-friendly interactions. Kept unless a strong technical reason emerges (e.g., WebGL scale needs).                                                  |
+| Auth (planned)      | JWT or session-based, role-gated                                       | Investigator / reviewer roles. Exact choice deferred to API phase.                                                                                                                                           |
+| Reporting           | PDF generation from backend (e.g., WeasyPrint/ReportLab) + JSON export | Deterministic, server-side rendering.                                                                                                                                                                        |
 
 > Stack may evolve with justification; changes will be documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -154,18 +154,18 @@ crypto_attribution_engine/
 
 ## 7. Current Development Status
 
-| Phase | Status |
-|---|---|
-| 0 — Documentation & repo bootstrap | **Completed** |
-| 1 — Data ingestion (backend foundation) | **Completed** — Ethereum (Etherscan V2) adapter, canonical model, idempotent PostgreSQL persistence, `/health` + ingestion API. Token-transfer (`tokentx`) ingestion is a documented follow-on. |
-| 2 — Database / graph construction | **Completed** — `GraphBuilder` derives a directed transaction graph from persisted rows; `DatabaseGraphExpander` loads outgoing edges (native + token evidence) on demand. |
-| 3 — Traversal engine | **Completed** — deterministic bounded BFS (`TraversalEngine`): hop limits, time window, min value, per-hop/global edge caps, cycle & revisit handling, evidence-preserving paths. |
-| 4 — Entity attribution | **Completed** — local `entities` / `entity_addresses` registry with exact-match lookup, `ConfidenceScorer` (probabilistic score + tier + factors), and `AttributionService` combining traversal + registry + scoring. |
-| 5 — Risk scoring | Not started |
-| 6 — API | Partial — Phase 1 base routes live plus `POST /api/v1/attribution/investigate`; auth/reporting endpoints in later phases |
-| 7 — Dashboard | Not started |
-| 8 — Reporting & SAHYOG export | Not started |
-| 9 — Testing & hardening | Partial — unit + API tests for Phases 1–4 are in place (132 tests) |
+| Phase                                   | Status                                                                                                                                                                                                                |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 — Documentation & repo bootstrap      | **Completed**                                                                                                                                                                                                         |
+| 1 — Data ingestion (backend foundation) | **Completed** — Ethereum (Etherscan V2) adapter, canonical model, idempotent PostgreSQL persistence, `/health` + ingestion API. Token-transfer (`tokentx`) ingestion is a documented follow-on.                       |
+| 2 — Database / graph construction       | **Completed** — `GraphBuilder` derives a directed transaction graph from persisted rows; `DatabaseGraphExpander` loads outgoing edges (native + token evidence) on demand.                                            |
+| 3 — Traversal engine                    | **Completed** — deterministic bounded BFS (`TraversalEngine`): hop limits, time window, min value, per-hop/global edge caps, cycle & revisit handling, evidence-preserving paths.                                     |
+| 4 — Entity attribution                  | **Completed** — local `entities` / `entity_addresses` registry with exact-match lookup, `ConfidenceScorer` (probabilistic score + tier + factors), and `AttributionService` combining traversal + registry + scoring. |
+| 5 — Risk scoring                        | Not started                                                                                                                                                                                                           |
+| 6 — API                                 | Partial — Phase 1 base routes live plus `POST /api/v1/attribution/investigate`; auth/reporting endpoints in later phases                                                                                              |
+| 7 — Dashboard                           | Not started                                                                                                                                                                                                           |
+| 8 — Reporting & SAHYOG export           | Not started                                                                                                                                                                                                           |
+| 9 — Testing & hardening                 | Partial — unit + API tests for Phases 1–4 are in place (132 tests)                                                                                                                                                    |
 
 **Working today:**
 
@@ -236,7 +236,7 @@ development PostgreSQL database so endpoints such as
 > Never point these commands at a production database.
 
 The demo graph is: `SEED (0x…0001) → INTER (0x…0004) → VASP_A (0x…0064)`, with
-VASP_A registered as the synthetic entity *"Candidate VASP alpha"*. All hashes
+VASP_A registered as the synthetic entity _"Candidate VASP alpha"_. All hashes
 and timestamps are deterministic and match the test-factory conventions.
 
 ```bash
@@ -282,4 +282,4 @@ See `backend/app/dev/` (fixtures + CLI) for details.
 
 ---
 
-*This README will be updated as each phase lands. For detailed specs, see REQUIREMENTS.md, ARCHITECTURE.md, ATTRIBUTION.md, and ROADMAP.md.*
+_This README will be updated as each phase lands. For detailed specs, see REQUIREMENTS.md, ARCHITECTURE.md, ATTRIBUTION.md, and ROADMAP.md._
