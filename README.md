@@ -116,9 +116,9 @@ crypto_attribution_engine/
 ├── ATTRIBUTION.md
 ├── ROADMAP.md
 ├── compose.yaml             # optional local PostgreSQL (Docker)
-├── docker/postgres/init/    # dev-only: creates crypto_attribution_test
+├── v1/docker/postgres/init/    # dev-only: creates crypto_attribution_test
 ├── Makefile
-├── backend/                 # Python + FastAPI (Phase 1)
+├── v1/backend/                 # Python + FastAPI (Phase 1)
 │   ├── .env.example         # documented placeholders; copy to .env
 │   ├── requirements.txt / requirements-dev.txt
 │   ├── pytest.ini
@@ -187,7 +187,7 @@ Prerequisites: Python 3.11+, PostgreSQL 15+ running locally (or Docker; see
 
 ```bash
 # 1) Backend virtualenv + dependencies
-make backend-install                      # or: python3 -m venv backend/.venv && \
+make backend-install                      # or: python3 -m venv v1/backend/.venv && \
                                           # backward compat: see Makefile
 
 # 2) PostgreSQL
@@ -200,7 +200,7 @@ make backend-install                      # or: python3 -m venv backend/.venv &&
 #       make migrate-db                    # creates tables via alembic upgrade head
 
 # 3) Configuration
-cp backend/.env.example backend/.env       # then fill in ETHERSCAN_API_KEY
+cp v1/backend/.env.example v1/backend/.env       # then fill in ETHERSCAN_API_KEY
 # DATABASE_URL and TEST_DATABASE_URL point at local profiles by default.
 
 # 4) Run the API
@@ -216,13 +216,13 @@ curl http://127.0.0.1:8000/docs            # interactive OpenAPI
 ```bash
 # Against a real PostgreSQL test database (recommended)
 TEST_DATABASE_URL=postgresql+asyncpg://<user>@localhost:5432/crypto_attribution_test \
-  .venv/bin/pytest                          # from backend/
+  .venv/bin/pytest                          # from v1/backend/
 
 # Or SQLite fallback (no Postgres needed)
 cd backend && .venv/bin/pytest
 ```
 
-See `backend/.env.example` for the complete configuration surface.
+See `v1/backend/.env.example` for the complete configuration surface.
 
 ### Demo data for manual API testing (development only)
 
@@ -241,10 +241,10 @@ and timestamps are deterministic and match the test-factory conventions.
 
 ```bash
 # Seed (idempotent — safe to re-run; duplicate rows are skipped)
-# Uses DATABASE_URL from backend/.env; creates missing tables if needed.
+# Uses DATABASE_URL from v1/backend/.env; creates missing tables if needed.
 make seed-demo
 
-# Optional: point at a different database instead of backend/.env
+# Optional: point at a different database instead of v1/backend/.env
 cd backend && .venv/bin/python -m app.dev.seed_demo --database-url \
   postgresql+asyncpg://<user>@localhost:5432/crypto_attribution
 
@@ -262,7 +262,7 @@ To remove **only the demo-owned rows** (leaving any other data untouched):
 make reset-demo
 ```
 
-See `backend/app/dev/` (fixtures + CLI) for details.
+See `v1/backend/app/dev/` (fixtures + CLI) for details.
 
 ---
 

@@ -40,7 +40,7 @@ The system helps an investigator start from a suspect/unhosted wallet address, t
 | FR-CHAIN-02 | Chain support is adapter-based: each chain has an isolated ingestion/normalization module. **[IMPLEMENTED — registry + `ChainAdapter` interface; only `ethereum` registered]** |
 | FR-CHAIN-03 | Token transfers (e.g., ERC-20) are in scope as a follow-on after native-asset tracing is stable. **[MODELED ONLY — `token_transfers` table + schema exist; `tokentx` fetch is a documented follow-on]** |
 
-> Ethereum provider (chosen, live): **Etherscan API V2** — `https://api.etherscan.io/v2/api`, `chainid` param, key via env. See `backend/app/services/ingestion/ethereum_client.py`.
+> Ethereum provider (chosen, live): **Etherscan API V2** — `https://api.etherscan.io/v2/api`, `chainid` param, key via env. See `v1/backend/app/services/ingestion/ethereum_client.py`.
 
 ### 3.3 Data Requirements
 
@@ -144,7 +144,7 @@ The system helps an investigator start from a suspect/unhosted wallet address, t
 3. **Access control** — Planned role-based access (investigator, reviewer, admin). Even at thesis scale, investigations are not world-readable.
 4. **Audit trail** — Record who created/modified investigations, overrides, and exports (user, timestamp).
 5. **Data retention** — Thesis deployment is local/ephemeral; production retention and encryption-at-rest are noted as future work.
-6. **Dependency hygiene** — Pin backend/frontend dependencies; run `pip audit` / `npm audit` before releases.
+6. **Dependency hygiene** — Pin `v1/backend/`/`frontend/` dependencies; run `pip audit` / `npm audit` before releases.
 7. **Rate limiting & abuse** — Ingestion layer respects upstream rate limits with backoff; API layer applies per-user rate limiting in later phases.
 8. **No private key handling** — The system never handles, stores, or requests private keys or seed phrases.
 

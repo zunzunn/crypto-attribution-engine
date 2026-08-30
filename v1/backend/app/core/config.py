@@ -1,8 +1,8 @@
 """Central configuration loaded from environment variables / .env file.
 
 All secrets (API keys, database passwords) are read from the environment or
-``backend/.env`` (which is git-ignored). Nothing is hardcoded and nothing is
-committed. See ``backend/.env.example`` for the documented set of variables.
+``v1/backend/.env`` (which is git-ignored). Nothing is hardcoded and nothing is
+committed. See ``v1/backend/.env.example`` for the documented set of variables.
 """
 
 from __future__ import annotations

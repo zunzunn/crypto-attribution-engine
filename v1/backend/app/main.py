@@ -2,7 +2,7 @@
 
 ``create_app`` owns the engine/session factory and the adapter registry so
 tests can inject an in-memory SQLite engine and a stubbed adapter registry
-while production uses the PostgreSQL engine from ``backend/.env``.
+while production uses the PostgreSQL engine from ``v1/backend/.env``.
 """
 
 from __future__ import annotations

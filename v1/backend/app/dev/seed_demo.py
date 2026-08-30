@@ -10,7 +10,7 @@ dummy values (``0x0000…0001`` style), never real exchange/VASP wallets, and
 the entity tag source (``demo_fixture_v1``) marks it unambiguously as a
 development fixture. Never point this at a production database.
 
-Usage (from ``backend/``):
+Usage (from ``v1/backend/``):
 
     .venv/bin/python -m app.dev.seed_demo            # seed (idempotent)
     .venv/bin/python -m app.dev.seed_demo --reset    # remove demo data only

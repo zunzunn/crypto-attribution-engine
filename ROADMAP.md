@@ -11,7 +11,7 @@
 | Item | Detail |
 |---|---|
 | Goal | Clean repo structure, scaffolding, and design contracts before any application code. |
-| Deliverables | `README.md`, `REQUIREMENTS.md`, `ARCHITECTURE.md`, `ATTRIBUTION.md`, `ROADMAP.md`, directory scaffolding (`backend/`, `frontend/`, `data/`, `docs/`, `scripts/`). |
+| Deliverables | `README.md`, `REQUIREMENTS.md`, `ARCHITECTURE.md`, `ATTRIBUTION.md`, `ROADMAP.md`, directory scaffolding (`v1/backend/`, `frontend/`, `data/`, `docs/`, `scripts/`). |
 | Exit criteria | All five Markdown files reviewed; directories created; `.gitignore` covers secrets and local data. |
 
 ---
@@ -52,7 +52,7 @@
 |---|---|
 | Goal | Solidify the storage model and build the in-memory transaction graph. |
 | Tasks | 1. Finalize tables: `investigations`, `addresses`, `transactions`, `transaction_edges`, `entities`, `address_entity_map`, `trace_runs`. 2. Indexes on `(chain_id, address)`, `tx_hash`, `block_time`. 3. Graph builder that materializes a directed graph from `transaction_edges` for a given investigation/trace run. |
-| Deliverables | Updated migrations, graph construction service (`backend/app/services/graph/`), unit tests with fixtures. |
+| Deliverables | Updated migrations, graph construction service (`v1/backend/app/services/graph/`), unit tests with fixtures. |
 | Done | `transactions`/`token_transfers` graphs derived on demand (`app/services/graph/`); unit tests (`tests/unit/test_graph_expansion.py`). |
 | Exit criteria | A persisted set of transactions can be materialized as a correct directed graph (nodes/edges) with hop metadata; tests cover UTXO multi-output and account-based cases. |
 
@@ -66,7 +66,7 @@
 |---|---|
 | Goal | Bounded, explainable fund-flow traversal from a seed address. |
 | Tasks | 1. BFS forward traversal with constraints: `max_hops`, `time_window`, `min_value`/`value_tolerance`, `max_edges_per_hop`, `max_total_edges`. 2. Cycle detection and pruning-reason logging. 3. UTXO change-heuristic handling (opt-in, labeled `heuristic`). 4. Deterministic output ordering. |
-| Deliverables | `backend/app/services/traversal/` with configurable parameters, path + graph outputs, pruning diagnostics. |
+| Deliverables | `v1/backend/app/services/traversal/` with configurable parameters, path + graph outputs, pruning diagnostics. |
 | Exit criteria | Traversal respects all constraints, handles cycles without infinite expansion, records pruning reasons, and produces reproducible paths for the same snapshot/params. |
 
 ---
@@ -79,7 +79,7 @@
 |---|---|
 | Goal | Map traversed addresses to entity categories with evidence bundles. |
 | Tasks | 1. Entity catalog and `address_entity_map` with versioned tag sources. 2. Matching layers: exact address → cluster heuristic → contract/behavioral → unknown. 3. Evidence bundle per attribution (tag source/version, evidence tx hashes). 4. Investigator manual overrides with audit log. |
-| Deliverables | `backend/app/services/attribution/`, tag import tooling, evidence bundle model. |
+| Deliverables | `v1/backend/app/services/attribution/`, tag import tooling, evidence bundle model. |
 | Done | `app/services/attribution/` (registry, scoring, service); migration `0002_entities`; tests (`tests/unit/test_entity_registry.py`, `test_confidence_scoring.py`, `test_attribution_service.py`). |
 | Exit criteria | Known VASP/mixer/bridge addresses are correctly categorized with evidence; unknown addresses default to `unknown`/`unhosted`; overrides are audit-logged; every attribution carries its evidence bundle. |
 
@@ -93,7 +93,7 @@
 |---|---|
 | Goal | Explainable confidence and risk scores per attribution and per path. |
 | Tasks | 1. Implement scoring model v0 per ATTRIBUTION.md (base scores + adjustments, path aggregation). 2. Persist scoring version and factor breakdowns. 3. Tier mapping and calibration against synthetic fixtures. |
-| Deliverables | `backend/app/services/scoring/`, versioned scoring config, breakdown output for API/UI/report. |
+| Deliverables | `v1/backend/app/services/scoring/`, versioned scoring config, breakdown output for API/UI/report. |
 | Exit criteria | Scores are deterministic, bounded `[0,1]`, explainable (factor breakdown), and match the methodology in ATTRIBUTION.md; changing weights bumps the model version. |
 
 ---
@@ -104,7 +104,7 @@
 |---|---|
 | Goal | Expose investigations, traces, entities, and reports via a typed REST API. |
 | Tasks | 1. FastAPI app factory, Pydantic schemas, route groups (`/api/v1/investigations`, `/traces`, `/entities`, `/reports`, `/health`). 2. Config via `core/config.py` (env-based). 3. Async job handling for ingestion/trace runs (create → poll → result). 4. Auth scaffolding (JWT/session, roles: investigator/reviewer). 5. Validation, error mapping, rate limiting, audit logging. |
-| Deliverables | `backend/app/api/`, `backend/app/core/`, OpenAPI docs at `/docs`, integration tests. |
+| Deliverables | `v1/backend/app/api/`, `v1/backend/app/core/`, OpenAPI docs at `/docs`, integration tests. |
 | Exit criteria | An investigator can drive the full flow via API (create case → run trace → fetch graph/scores → request report); OpenAPI spec is accurate; no private key handling. |
 
 ---
@@ -126,7 +126,7 @@
 |---|---|
 | Goal | Reproducible, auditable exports and SAHYOG-compatible payload. |
 | Tasks | 1. PDF + JSON report generation (case metadata, params, graph summary, per-path attribution with confidence/evidence, risk summary, limitations, snapshot/scoring versions). 2. SAHYOG-compatible JSON mapper + validator (schema aligned to the published/shared spec available at build time). 3. Field mapping documented in `docs/sahyog-mapping.md`. |
-| Deliverables | `backend/app/services/reporting/`, report templates, SAHYOG mapper/validator, mapping doc. |
+| Deliverables | `v1/backend/app/services/reporting/`, report templates, SAHYOG mapper/validator, mapping doc. |
 | Exit criteria | PDF and JSON reports have identical semantic content and include limitations/disclaimers; SAHYOG payload validates against the documented schema; every export records its snapshot/scoring versions. Live portal submission is out of scope unless a test endpoint is provided. |
 
 ---

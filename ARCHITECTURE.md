@@ -80,7 +80,7 @@
 
 ### 3.1 Blockchain APIs (External)
 
-- One adapter per chain under `backend/app/services/ingestion/`.
+- One adapter per chain under `v1/backend/app/services/ingestion/`.
 - **Phase 1 (implemented)** — Ethereum via the Etherscan V2 endpoint
   (`https://api.etherscan.io/v2/api`, `chainid`-parameterized, API key via env).
   `EtherscanClient` handles pagination (`page`/`offset` with `page_size` and
@@ -120,8 +120,8 @@
 - Token transfers (`tokentx`, ERC-20) are modeled (schema + `token_transfers`
   table) but not yet fetched — a documented Phase 1 follow-on.
 
-**Modules**: `backend/app/services/ingestion/`, `backend/app/schemas/`,
-`backend/app/repositories/`, `backend/app/services/ingestion_service.py`.
+**Modules**: `v1/backend/app/services/ingestion/`, `v1/backend/app/schemas/`,
+`v1/backend/app/repositories/`, `v1/backend/app/services/ingestion_service.py`.
 
 ### 3.3 PostgreSQL — Primary Store *(Phase 1 — implemented)*
 
@@ -173,7 +173,7 @@ migrations/health probe.
 - **UTXO specifics**: change-address heuristics are optional, clearly labeled as probabilistic, and never silently merge addresses.
 - **Output**: ordered paths (list of edges) with per-hop metadata, plus the merged graph for visualization.
 
-**Module**: `backend/app/services/traversal/`.
+**Module**: `v1/backend/app/services/traversal/`.
 
 ### 3.6 Entity Attribution
 
@@ -187,7 +187,7 @@ migrations/health probe.
 
 Detailed methodology in [ATTRIBUTION.md](ATTRIBUTION.md).
 
-**Module**: `backend/app/services/attribution/`.
+**Module**: `v1/backend/app/services/attribution/`.
 
 ### 3.7 Risk & Confidence Scoring
 
@@ -197,7 +197,7 @@ Detailed methodology in [ATTRIBUTION.md](ATTRIBUTION.md).
 
 See [ATTRIBUTION.md](ATTRIBUTION.md) for the scoring model.
 
-**Module**: `backend/app/services/scoring/`.
+**Module**: `v1/backend/app/services/scoring/`.
 
 ### 3.8 FastAPI Backend *(Phase 1 — implemented)*
 
@@ -234,7 +234,7 @@ GET    /api/v1/transactions/{tx_hash}    — fetch one canonical tx (address-awa
 - DB errors map to 5xx, validation/config failures to clean 4xx/5xx with JSON detail.
 - CORS middleware is config-driven (`CORS_ORIGINS`).
 
-**Module**: `backend/app/api/` + `backend/app/core/` (config, security, logging).
+**Module**: `v1/backend/app/api/` + `v1/backend/app/core/` (config, security, logging).
 
 ### 3.9 React Dashboard
 
@@ -254,7 +254,7 @@ GET    /api/v1/transactions/{tx_hash}    — fetch one canonical tx (address-awa
 - **PDF/JSON report**: server-side generation (e.g., WeasyPrint or ReportLab for PDF; Pydantic serialization for JSON). Content defined in REQUIREMENTS.md §3.8.
 - **SAHYOG-compatible payload**: JSON mapping of investigation findings to the portal's expected schema. Phase 8 produces the mapper and a validator; live submission requires portal credentials and is out of scope for the bootstrap. The payload structure and field mapping will be documented in `docs/sahyog-mapping.md` when the schema is available.
 
-**Module**: `backend/app/services/reporting/`.
+**Module**: `v1/backend/app/services/reporting/`.
 
 ---
 
@@ -262,7 +262,7 @@ GET    /api/v1/transactions/{tx_hash}    — fetch one canonical tx (address-awa
 
 ### 4.1 Configuration *(Phase 1 — implemented)*
 
-- `backend/app/core/config.py` (Pydantic Settings) — DB URLs, Etherscan API key/base URL/chain id/timeout/pagination, CORS origins, log level, DB auto-create. All secrets via environment variables; `.env` is gitignored. See `backend/.env.example` for the full surface.
+- `v1/backend/app/core/config.py` (Pydantic Settings) — DB URLs, Etherscan API key/base URL/chain id/timeout/pagination, CORS origins, log level, DB auto-create. All secrets via environment variables; `.env` is gitignored. See `v1/backend/.env.example` for the full surface.
 
 ### 4.2 Security
 
@@ -279,7 +279,7 @@ GET    /api/v1/transactions/{tx_hash}    — fetch one canonical tx (address-awa
 
 ### 4.4 Testing Strategy *(Phase 1 — implemented)*
 
-- Pytest suite in `backend/tests/` — 59 tests covering normalizers, client (stubbed HTTP), address validation, canonical schema, repositories/idempotency, config, and API routes.
+- Pytest suite in `v1/backend/tests/` — 59 tests covering normalizers, client (stubbed HTTP), address validation, canonical schema, repositories/idempotency, config, and API routes.
 - Runs against a real PostgreSQL test database (`TEST_DATABASE_URL`) or a SQLite in-memory fallback when unset; both green.
 - Ruff linting clean.
 - Profiling/attribution/scoring tests are deferred to their phases.

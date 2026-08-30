@@ -115,7 +115,7 @@ class EtherscanClient:
             raise RateLimitError(f"Etherscan rate limit exceeded: {body.get('message')}")
         if "api key" in message or "api key" in result_text:
             raise ProviderError(
-                "Etherscan rejected the API key. Set ETHERSCAN_API_KEY in backend/.env. "
+                "Etherscan rejected the API key. Set ETHERSCAN_API_KEY in v1/backend/.env. "
                 f"(provider: {body.get('result')})"
             )
         raise ProviderError(f"Etherscan API error ({body.get('message')}). Raw: {str(result)[:300]}")
