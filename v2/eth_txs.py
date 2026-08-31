@@ -2,7 +2,66 @@ import argparse
 import os
 import json
 import sys
+from dotenv import load_dotenv
+import requests
 from collections import defaultdict
+
+
+load_dotenv()
+
+
+def fetch_transactions_from_etherscan(address: str, filepath: str = "transaction.json") -> list:
+    """Fetch transaction history for an Ethereum address using Etherscan API V2.
+
+    Calls the `account.txlist` endpoint and saves the raw response to `filepath`
+    (default: transaction.json). Returns the parsed transactions list.
+
+    Requires ETHERSCAN_API_KEY environment variable to be set (loaded from .env file).
+    """
+    api_key = os.getenv("ETHERSCAN_API_KEY")
+    if not api_key:
+        print("Error: ETHERSCAN_API_KEY not set in environment.", file=sys.stderr)
+        sys.exit(1)
+
+    if not is_valid_eth_address(address):
+        print(f"Invalid Ethereum address: {address}", file=sys.stderr)
+        sys.exit(1)
+
+    base_url = "https://api.etherscan.io/v2/api"
+    params = {
+        "module": "account",
+        "action": "txlist",
+        "address": address,
+        "startblock": 0,
+        "endblock": 99999999,
+        "page": 1,
+        "offset": 100,
+        "sort": "asc",
+        "chainid": "1",
+        "apikey": api_key,
+    }
+
+    try:
+        response = requests.get(base_url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("status") != "1":
+            # Print complete error response (including result field) without exposing the API key
+            error_detail = data.get("result", "No result field")
+            print(f"Etherscan API error (status={data.get('status')}, message={data.get('message')}, result={error_detail})", file=sys.stderr)
+            sys.exit(1)
+
+        transactions = data.get("result", [])
+        with open(filepath, "w") as f:
+            json.dump(transactions, f, indent=2)
+
+        print(f"Fetched {len(transactions)} transactions for {address} and saved to {filepath}")
+        return transactions
+
+    except requests.exceptions.RequestException as exc:
+        print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 RISK_BASE_POINTS = {
@@ -194,6 +253,10 @@ def main() -> None:
         help="Path to transaction JSON file (default: transaction.json)",
     )
     parser.add_argument(
+        "--address",
+        help="Fetch transaction history from Etherscan API V2 and save to transaction.json",
+    )
+    parser.add_argument(
         "--start",
         help="Starting Ethereum address for BFS traversal",
     )
@@ -205,14 +268,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    try:
-        transactions = load_transactions(args.tx_file)
-    except FileNotFoundError:
-        print(f"Error: {args.tx_file} not found.", file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError as exc:
-        print(f"Error parsing JSON: {exc}", file=sys.stderr)
-        sys.exit(1)
+    if args.address:
+        transactions = fetch_transactions_from_etherscan(args.address, args.tx_file)
+    else:
+        try:
+            transactions = load_transactions(args.tx_file)
+        except FileNotFoundError:
+            print(f"Error: {args.tx_file} not found.", file=sys.stderr)
+            sys.exit(1)
+        except json.JSONDecodeError as exc:
+            print(f"Error parsing JSON: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     if not isinstance(transactions, list) or not transactions:
         print("Error: transaction file must contain a non-empty array.", file=sys.stderr)
@@ -402,6 +468,146 @@ if __name__ == "__main__":
         main()
 
 
+def test_address_cli_with_mock() -> None:
+    """Test the --address CLI flow using a mocked Etherscan API response.
+
+    Does not make live API calls; uses unittest.mock to patch requests.get.
+    Verifies that transactions are saved to transaction.json and the
+    subsequent graph/BSF flow works with the fetched data.
+    """
+    import unittest.mock as mock
+    import os
+
+    # Set a dummy API key so the function doesn't exit early
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response
+    mock_tx_data = [
+        {
+            "hash": "0xmockhash1",
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "value": "1000000000000000000",
+            "timeStamp": "1609459200",
+        },
+        {
+            "hash": "0xmockhash2",
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xcccccccccccccccccccccccccccccccccccccccc",
+            "value": "2000000000000000000",
+            "timeStamp": "1609459320",
+        },
+    ]
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "1",
+            "message": "OK",
+            "result": mock_tx_data,
+        }
+        mock_get.return_value = mock_response
+
+        # Run the fetch function
+        from eth_txs import fetch_transactions_from_etherscan
+        transactions = fetch_transactions_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "test_tx.json"
+        )
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    # Verify the saved file
+    from eth_txs import load_transactions
+    saved_data = load_transactions("test_tx.json")
+    assert len(saved_data) == 2, f"Expected 2 transactions, got {len(saved_data)}"
+    assert saved_data[0]["hash"] == "0xmockhash1"
+    assert saved_data[0]["from"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert saved_data[0]["to"] == "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert saved_data[1]["hash"] == "0xmockhash2"
+
+    # Verify the transactions can build a graph
+    from eth_txs import build_graph
+    graph = build_graph(saved_data)
+    assert "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" in graph
+    assert "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa->0xcccccccccccccccccccccccccccccccccccccccc" in graph
+
+    # Verify BFS works with the fetched data
+    from eth_txs import bfs_traverse
+    result = bfs_traverse(graph, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", max_hops=2)
+    assert len(result["visited"]) > 0
+    assert "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" in result["visited"]
+    assert "0xcccccccccccccccccccccccccccccccccccccccc" in result["visited"]
+
+    # Cleanup
+    import os
+    if os.path.exists("test_tx.json"):
+        os.remove("test_tx.json")
+
+    print("test_address_cli_with_mock passed!")
+
+
+def test_etherscan_error_handling() -> None:
+    """Test that Etherscan API errors print the complete JSON response including the result field.
+
+    Verifies that when the API returns status != "1", the error message includes
+    the status, message, and result fields without exposing the API key.
+    """
+    import unittest.mock as mock
+    import os
+    import sys
+    from io import StringIO
+
+    # Set a dummy API key so the function doesn't exit early
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API error response (status = "0")
+    mock_error_data = {
+        "status": "0",
+        "message": "Internal Error",
+        "result": "Max rate limit exceeded",
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_error_data
+        mock_get.return_value = mock_response
+
+        # Capture stderr
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+
+        try:
+            from eth_txs import fetch_transactions_from_etherscan
+            fetch_transactions_from_etherscan(
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "test_error.json"
+            )
+        except SystemExit:
+            pass  # Expected - the function exits on API error
+
+        # Restore stderr
+        output = sys.stderr.getvalue()
+        sys.stderr = old_stderr
+
+        # Verify the full error response is displayed (includes result field)
+        assert "status=0" in output, f"Expected 'status=0' in error output, got: {output}"
+        assert "message=Internal Error" in output, f"Expected 'message=Internal Error' in error output, got: {output}"
+        assert "result=Max rate limit exceeded" in output, (
+            f"Expected 'result=Max rate limit exceeded' in error output, got: {output}"
+        )
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    # Cleanup
+    import os
+    if os.path.exists("test_error.json"):
+        os.remove("test_error.json")
+
+    print("test_etherscan_error_handling passed!")
+
+
 def test_risk_scoring() -> None:
     """Tests for rule-based risk scoring and entity classification."""
 
@@ -479,3 +685,61 @@ def test_risk_scoring() -> None:
     assert vasp_h2_level == "Low"
 
     print("All risk scoring tests passed!")
+
+
+def test_etherscan_v2_endpoint() -> None:
+    """Verify that the Etherscan request uses the V2 API endpoint (/v2/api).
+
+    Patches requests.get and checks that the base URL contains /v2/api
+    (not the deprecated /api V1 endpoint). Does not expose the API key.
+    """
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "1",
+            "message": "OK",
+            "result": [],
+        }
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_transactions_from_etherscan
+        fetch_transactions_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "test_v2.json"
+        )
+
+        # Get the request URL that was actually called
+        call_args = mock_get.call_args
+        url = call_args[0][0]  # first positional arg is the URL
+
+        # Verify V2 endpoint is used (no apiversion param needed; /v2/ in path selects V2)
+        assert "/v2/api" in url, f"Expected /v2/api in URL, got: {url}"
+
+        # Verify V1 endpoint is NOT used
+        assert "/api" in url, f"URL should contain api endpoint, got: {url}"
+
+        # Verify chainid=1 is included in the request parameters (required for V2 API)
+        params = call_args[1].get("params", {})
+        assert "chainid" in params and params["chainid"] == "1", (
+            f"Expected chainid=1 in request params, got: {params}"
+        )
+
+        # Verify API key is not in the URL
+        assert "apikey=" not in url.lower() or "testkey" not in url, (
+            "API key should not appear in URL"
+        )
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    # Cleanup
+    import os
+    if os.path.exists("test_v2.json"):
+        os.remove("test_v2.json")
+
+    print("test_etherscan_v2_endpoint passed!")
