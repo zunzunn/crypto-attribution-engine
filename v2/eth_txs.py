@@ -10,6 +10,56 @@ from collections import defaultdict
 load_dotenv()
 
 
+def is_valid_eth_address(address: str) -> bool:
+    """Check if string looks like an Ethereum address."""
+    addr = address.strip()
+    if not addr.startswith("0x"):
+        return False
+    hex_part = addr[2:]
+    if len(hex_part) != 40:
+        return False
+    try:
+        int(hex_part, 16)
+        return True
+    except ValueError:
+        return False
+
+
+def load_transactions(path: str = "transaction.json") -> list:
+    """Load transactions from a JSON file.
+
+    Expected format: array of objects with 'from', 'to', 'hash', 'value', 'timeStamp' fields.
+    """
+    with open(path, "r") as f:
+        data = json.load(f)
+    return data
+
+
+def build_graph(transactions: list, include_token_transfers: bool = False) -> dict:
+    """Build a transaction graph from a list of transaction records.
+
+    Returns a dict mapping edge keys (from->to) to lists of
+    {hash, value_eth, timestamp} dicts.
+
+    If include_token_transfers is True, token transfers can be represented as edges
+    while preserving token information in the edge data.
+    """
+    graph = defaultdict(list)
+    for tx in transactions:
+        sender = tx.get("from", "")
+        receiver = tx.get("to", "")
+        if not is_valid_eth_address(sender) or not is_valid_eth_address(receiver):
+            continue
+        value_eth = int(tx.get("value", "0")) / 10 ** 18
+        tx_hash = tx.get("hash", "N/A")
+        timestamp = tx.get("timeStamp", "0")
+        edge_key = f"{sender}->{receiver}"
+        graph[edge_key].append(
+            {"hash": tx_hash, "value_eth": value_eth, "timestamp": timestamp}
+        )
+    return dict(graph)
+
+
 def fetch_transactions_from_etherscan(address: str, filepath: str = "transaction.json") -> list:
     """Fetch transaction history for an Ethereum address using Etherscan API V2.
 
@@ -62,6 +112,80 @@ def fetch_transactions_from_etherscan(address: str, filepath: str = "transaction
     except requests.exceptions.RequestException as exc:
         print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+def fetch_erc20_token_transfers(address: str, filepath: str = "token_transfers.json") -> list:
+    """Fetch ERC-20 token transfer history for an Ethereum address using Etherscan API V2.
+
+    Calls the `account tokentx` endpoint and saves the raw response to `filepath`
+    (default: token_transfers.json). Returns the parsed token transfers list.
+
+    Requires ETHERSCAN_API_KEY environment variable to be set (loaded from .env file).
+    Uses chainid=1 for Ethereum Mainnet.
+    """
+    api_key = os.getenv("ETHERSCAN_API_KEY")
+    if not api_key:
+        print("Error: ETHERSCAN_API_KEY not set in environment.", file=sys.stderr)
+        sys.exit(1)
+
+    if not is_valid_eth_address(address):
+        print(f"Invalid Ethereum address: {address}", file=sys.stderr)
+        sys.exit(1)
+
+    base_url = "https://api.etherscan.io/v2/api"
+    params = {
+        "module": "account",
+        "action": "tokentx",
+        "address": address,
+        "startblock": 0,
+        "endblock": 99999999,
+        "page": 1,
+        "offset": 100,
+        "sort": "asc",
+        "chainid": "1",
+        "apikey": api_key,
+    }
+
+    try:
+        response = requests.get(base_url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("status") != "1":
+            # Print complete error response (including result field) without exposing the API key
+            error_detail = data.get("result", "No result field")
+            print(f"Etherscan API error (status={data.get('status')}, message={data.get('message')}, result={error_detail})", file=sys.stderr)
+            sys.exit(1)
+
+        token_transfers = data.get("result", [])
+        with open(filepath, "w") as f:
+            json.dump(token_transfers, f, indent=2)
+
+        print(f"Fetched {len(token_transfers)} ERC-20 token transfers for {address} and saved to {filepath}")
+        return token_transfers
+
+    except requests.exceptions.RequestException as exc:
+        print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def parse_erc20_transfer(raw: dict) -> dict:
+    """Parse a raw Etherscan token transfer dict into a common format.
+
+    Returns a dict with keys: hash, from_address, to_address,
+    token_contract_address, token_symbol, amount_raw, amount_ether, timestamp.
+    Etherscan API uses CamelCase keys (tokenContractAddress, tokenSymbol).
+    """
+    return {
+        "hash": raw.get("hash", ""),
+        "from_address": raw.get("from", ""),
+        "to_address": raw.get("to", ""),
+        "token_contract_address": raw.get("tokenContractAddress", ""),
+        "token_symbol": raw.get("tokenSymbol", ""),
+        "amount_raw": raw.get("value", "0"),
+        "amount_ether": int(raw.get("value", "0")) / 10 ** 18,
+        "timestamp": raw.get("timeStamp", "0"),
+    }
 
 
 RISK_BASE_POINTS = {
@@ -117,53 +241,6 @@ def calculate_risk_score(entity_type: str, hops: int) -> (int, str):
         level = "Critical"
 
     return score, level
-
-
-def is_valid_eth_address(address: str) -> bool:
-    """Check if string looks like an Ethereum address."""
-    addr = address.strip()
-    if not addr.startswith("0x"):
-        return False
-    hex_part = addr[2:]
-    if len(hex_part) != 40:
-        return False
-    try:
-        int(hex_part, 16)
-        return True
-    except ValueError:
-        return False
-
-
-def load_transactions(path: str = "transaction.json") -> list:
-    """Load transactions from a JSON file.
-
-    Expected format: array of objects with 'from', 'to', 'hash', 'value', 'timeStamp' fields.
-    """
-    with open(path, "r") as f:
-        data = json.load(f)
-    return data
-
-
-def build_graph(transactions: list) -> dict:
-    """Build a transaction graph from a list of transaction records.
-
-    Returns a dict mapping edge keys (from->to) to lists of
-    {hash, value_eth, timestamp} dicts.
-    """
-    graph = defaultdict(list)
-    for tx in transactions:
-        sender = tx.get("from", "")
-        receiver = tx.get("to", "")
-        if not is_valid_eth_address(sender) or not is_valid_eth_address(receiver):
-            continue
-        value_eth = int(tx.get("value", "0")) / 10 ** 18
-        tx_hash = tx.get("hash", "N/A")
-        timestamp = tx.get("timeStamp", "0")
-        edge_key = f"{sender}->{receiver}"
-        graph[edge_key].append(
-            {"hash": tx_hash, "value_eth": value_eth, "timestamp": timestamp}
-        )
-    return dict(graph)
 
 
 def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
@@ -257,6 +334,10 @@ def main() -> None:
         help="Fetch transaction history from Etherscan API V2 and save to transaction.json",
     )
     parser.add_argument(
+        "--token",
+        help="Fetch ERC-20 token transfers from Etherscan API V2 and save to token_transfers.json",
+    )
+    parser.add_argument(
         "--start",
         help="Starting Ethereum address for BFS traversal",
     )
@@ -285,6 +366,9 @@ def main() -> None:
         sys.exit(1)
 
     graph = build_graph(transactions)
+
+    if args.token:
+        fetch_erc20_token_transfers(args.token, "token_transfers.json")
 
     if args.start:
         if not is_valid_eth_address(args.start):
@@ -459,13 +543,6 @@ def test_bfs() -> None:
     assert result["paths"] == {valid_addr: ([valid_addr], [])}
 
     print("All BFS tests passed!")
-
-
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        test_graph()
-    else:
-        main()
 
 
 def test_address_cli_with_mock() -> None:
@@ -668,19 +745,19 @@ def test_risk_scoring() -> None:
     assert low_score == 0, f"Expected minimum score 0, got {low_score}"
 
     # Test risk levels
-    # Scam/Fraud at hop 0 = 50 → High
+    # Scam/Fraud at hop 0 = 50 -> High
     _, scam_level = calculate_risk_score("Scam/Fraud", 0)
     assert scam_level == "High"
 
-    # Scam/Fraud at hop 1 = 45 → Medium
+    # Scam/Fraud at hop 1 = 45 -> Medium
     _, scam_h1_level = calculate_risk_score("Scam/Fraud", 1)
     assert scam_h1_level == "Medium"
 
-    # Bridge at hop 4 = 20 - 20 = 0 → Low
+    # Bridge at hop 4 = 20 - 20 = 0 -> Low
     _, bridge_h4_level = calculate_risk_score("Bridge", 4)
     assert bridge_h4_level == "Low"
 
-    # VASP at hop 2 = 10 - 10 = 0 → Low
+    # VASP at hop 2 = 10 - 10 = 0 -> Low
     _, vasp_h2_level = calculate_risk_score("VASP", 2)
     assert vasp_h2_level == "Low"
 
@@ -743,3 +820,102 @@ def test_etherscan_v2_endpoint() -> None:
         os.remove("test_v2.json")
 
     print("test_etherscan_v2_endpoint passed!")
+
+
+def test_erc20_token_transfers() -> None:
+    """Test the ERC-20 token transfer fetching and parsing flow.
+
+    Uses mocked Etherscan API responses to verify:
+    - Successful fetching and saving of token transfers
+    - Parsing of raw token transfer data into common format
+    - Graph construction with token transfer data
+    """
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response for token transfers
+    mock_token_data = [
+        {
+            "hash": "0xmocktokenhash1",
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "tokenContractAddress": "0xcccccccccccccccccccccccccccccccccccccccc",
+            "tokenSymbol": "USDT",
+            "value": "1000000",
+            "timeStamp": "1609459200",
+        },
+        {
+            "hash": "0xmocktokenhash2",
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xcccccccccccccccccccccccccccccccccccccccc",
+            "tokenContractAddress": "0xdddddddddddddddddddddddddddddddddddddddd",
+            "tokenSymbol": "USDC",
+            "value": "500000",
+            "timeStamp": "1609459300",
+        },
+    ]
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "1",
+            "message": "OK",
+            "result": mock_token_data,
+        }
+        mock_get.return_value = mock_response
+
+        # Run the fetch function
+        from eth_txs import fetch_erc20_token_transfers
+        transfers = fetch_erc20_token_transfers(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "test_token.json"
+        )
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    # Verify the saved file
+    from eth_txs import load_transactions
+    saved_data = load_transactions("test_token.json")
+    assert len(saved_data) == 2, f"Expected 2 token transfers, got {len(saved_data)}"
+    assert saved_data[0]["tokenSymbol"] == "USDT"
+    assert saved_data[0].get("tokenContractAddress", "") == "0xcccccccccccccccccccccccccccccccccccccccc"
+    assert saved_data[1]["tokenSymbol"] == "USDC"
+
+    # Verify parsing works correctly
+    from eth_txs import parse_erc20_transfer
+    parsed = parse_erc20_transfer(saved_data[0])
+    assert parsed["hash"] == "0xmocktokenhash1"
+    assert parsed["from_address"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert parsed["to_address"] == "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert parsed["token_contract_address"] == "0xcccccccccccccccccccccccccccccccccccccccc"
+    assert parsed["token_symbol"] == "USDT"
+    assert parsed["amount_ether"] == 1e-12  # 1000000 / 10^18
+    assert parsed["timestamp"] == "1609459200"
+
+    # Verify graph can be built with the token transfer data
+    from eth_txs import build_graph
+    # Create a combined transaction list that includes both ETH and token transfers
+    combined_txs = [
+        {"from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "value": "1000000000000000000", "hash": "0xethhash1", "timeStamp": "1609459200"},
+        *saved_data,  # Include the token transfers
+    ]
+    graph = build_graph(combined_txs)
+    # The ETH transaction should be in the graph
+    eth_edge = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert eth_edge in graph, f"Expected ETH edge {eth_edge} in graph"
+
+    # Cleanup
+    import os
+    if os.path.exists("test_token.json"):
+        os.remove("test_token.json")
+
+    print("test_erc20_token_transfers passed!")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        test_graph()
+    else:
+        main()
