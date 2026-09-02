@@ -338,6 +338,10 @@ def main() -> None:
         help="Fetch ERC-20 token transfers from Etherscan API V2 and save to token_transfers.json",
     )
     parser.add_argument(
+        "--internal",
+        help="Fetch Ethereum internal transactions from Etherscan API V2 and save to internal_transactions.json",
+    )
+    parser.add_argument(
         "--start",
         help="Starting Ethereum address for BFS traversal",
     )
@@ -369,6 +373,9 @@ def main() -> None:
 
     if args.token:
         fetch_erc20_token_transfers(args.token, "token_transfers.json")
+
+    if args.internal:
+        fetch_internal_transactions(args.internal, "internal_transactions.json")
 
     if args.start:
         if not is_valid_eth_address(args.start):
@@ -912,6 +919,169 @@ def test_erc20_token_transfers() -> None:
         os.remove("test_token.json")
 
     print("test_erc20_token_transfers passed!")
+
+
+def fetch_internal_transactions(address: str, filepath: str = "internal_transactions.json") -> list:
+    """Fetch Ethereum internal transactions for an address using Etherscan API V2.
+
+    Calls the `txlistinternal` endpoint and saves the raw response to `filepath`
+    (default: internal_transactions.json). Returns the parsed internal transactions list.
+
+    Requires ETHERSCAN_API_KEY environment variable to be set (loaded from .env file).
+    Uses chainid=1 for Ethereum Mainnet.
+    """
+    api_key = os.getenv("ETHERSCAN_API_KEY")
+    if not api_key:
+        print("Error: ETHERSCAN_API_KEY not set in environment.", file=sys.stderr)
+        sys.exit(1)
+
+    if not is_valid_eth_address(address):
+        print(f"Invalid Ethereum address: {address}", file=sys.stderr)
+        sys.exit(1)
+
+    base_url = "https://api.etherscan.io/v2/api"
+    params = {
+        "module": "account",
+        "action": "txlistinternal",
+        "address": address,
+        "startblock": 0,
+        "endblock": 99999999,
+        "page": 1,
+        "offset": 100,
+        "sort": "asc",
+        "chainid": "1",
+        "apikey": api_key,
+    }
+
+    try:
+        response = requests.get(base_url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("status") != "1":
+            # Print complete error response (including result field) without exposing the API key
+            error_detail = data.get("result", "No result field")
+            print(f"Etherscan API error (status={data.get('status')}, message={data.get('message')}, result={error_detail})", file=sys.stderr)
+            sys.exit(1)
+
+        internal_txs = data.get("result", [])
+        with open(filepath, "w") as f:
+            json.dump(internal_txs, f, indent=2)
+
+        print(f"Fetched {len(internal_txs)} internal transactions for {address} and saved to {filepath}")
+        return internal_txs
+
+    except requests.exceptions.RequestException as exc:
+        print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def parse_internal_transaction(raw: dict) -> dict:
+    """Parse a raw Etherscan internal transaction dict into a common format.
+
+    Returns a dict with keys: hash, from_address, to_address,
+    value_wei, value_eth, timestamp, is_error.
+    """
+    return {
+        "hash": raw.get("hash", ""),
+        "from_address": raw.get("from", ""),
+        "to_address": raw.get("to", ""),
+        "value_wei": raw.get("value", "0"),
+        "value_eth": int(raw.get("value", "0")) / 10 ** 18,
+        "timestamp": raw.get("timeStamp", "0"),
+        "is_error": raw.get("isError", "0"),
+    }
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        test_graph()
+    else:
+        main()
+def test_internal_transactions() -> None:
+    """Test the --internal CLI flow using a mocked Etherscan API response.
+
+    Does not make live API calls; uses unittest.mock to patch requests.get.
+    Verifies that internal transactions are saved to internal_transactions.json
+    and the parse_internal_transaction function correctly extracts fields
+    including is_error for failed transactions.
+    """
+    import unittest.mock as mock
+    import os
+    import json
+
+    # Set a dummy API key so the function doesn't exit early
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response
+    mock_internal_data = [
+        {
+            "hash": "0xinternalhash1",
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "value": "500000000000000000",
+            "timeStamp": "1609459200",
+            "isError": "0",
+        },
+        {
+            "hash": "0xinternalhash2",
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xcccccccccccccccccccccccccccccccccccccccc",
+            "value": "1000000000000000000",
+            "timeStamp": "1609459260",
+            "isError": "1",
+        },
+    ]
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "1",
+            "message": "OK",
+            "result": mock_internal_data,
+        }
+        mock_get.return_value = mock_response
+
+        # Run the fetch function
+        from eth_txs import fetch_internal_transactions
+        txs = fetch_internal_transactions(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "test_internal.json"
+        )
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    # Verify the saved file
+    from eth_txs import load_transactions
+    saved_data = load_transactions("test_internal.json")
+    assert len(saved_data) == 2, f"Expected 2 internal transactions, got {len(saved_data)}"
+    assert saved_data[0]["hash"] == "0xinternalhash1"
+    assert saved_data[0]["isError"] == "0"
+    assert saved_data[1]["hash"] == "0xinternalhash2"
+    assert saved_data[1]["isError"] == "1"
+
+    # Verify parsing works correctly
+    from eth_txs import parse_internal_transaction
+    parsed = parse_internal_transaction(saved_data[0])
+    assert parsed["hash"] == "0xinternalhash1"
+    assert parsed["from_address"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert parsed["to_address"] == "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert parsed["value_wei"] == "500000000000000000"
+    assert parsed["value_eth"] == 0.5
+    assert parsed["timestamp"] == "1609459200"
+    assert parsed["is_error"] == "0"
+
+    # Test failed internal transaction parsing
+    parsed_err = parse_internal_transaction(saved_data[1])
+    assert parsed_err["is_error"] == "1"
+    assert parsed_err["value_eth"] == 1.0
+
+    # Cleanup
+    import os
+    if os.path.exists("test_internal.json"):
+        os.remove("test_internal.json")
+
+    print("test_internal_transactions passed!")
 
 
 if __name__ == "__main__":
