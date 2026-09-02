@@ -993,11 +993,181 @@ def parse_internal_transaction(raw: dict) -> dict:
     }
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        test_graph()
-    else:
-        main()
+
+def normalize_eth_transaction(raw: dict) -> dict:
+    """Normalize a raw ETH transaction into a common format.
+
+    Returns dict with keys: hash, from_address, to_address,
+    asset_type ('ETH'), asset_contract (null), symbol ('ETH'), amount, timestamp.
+    """
+    value_eth = int(raw.get("value", "0")) / 10 ** 18
+    return {
+        "hash": raw.get("hash", ""),
+        "from_address": raw.get("from", ""),
+        "to_address": raw.get("to", ""),
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": value_eth,
+        "timestamp": raw.get("timeStamp", "0"),
+    }
+
+
+def normalize_erc20_transfer(raw: dict) -> dict:
+    """Normalize a raw ERC-20 token transfer into a common format.
+
+    Returns dict with keys: hash, from_address, to_address,
+    asset_type ('ERC20'), asset_contract (token contract address),
+    symbol (token symbol), amount (in ETH), timestamp.
+
+    Uses the tokenDecimal field from Etherscan response when available,
+    defaulting to 18 decimals for backward compatibility.
+    """
+    # Use tokenDecimal from Etherscan if available, default to 18
+    token_decimals = int(raw.get("tokenDecimal", "18"))
+    amount_raw = int(raw.get("value", "0"))
+    amount_eth = amount_raw / (10 ** token_decimals)
+    return {
+        "hash": raw.get("hash", ""),
+        "from_address": raw.get("from", ""),
+        "to_address": raw.get("to", ""),
+        "asset_type": "ERC20",
+        "asset_contract": raw.get("tokenContractAddress", ""),
+        "symbol": raw.get("tokenSymbol", ""),
+        "amount": amount_eth,
+        "timestamp": raw.get("timeStamp", "0"),
+    }
+
+
+def normalize_internal_transaction(raw: dict) -> dict:
+    """Normalize a raw Etherscan internal transaction into a common format.
+
+    Returns dict with keys: hash, from_address, to_address,
+    asset_type ('INTERNAL_ETH'), asset_contract (null), symbol ('ETH'),
+    amount (in ETH), timestamp, is_error.
+    """
+    value_eth = int(raw.get("value", "0")) / 10 ** 18
+    return {
+        "hash": raw.get("hash", ""),
+        "from_address": raw.get("from", ""),
+        "to_address": raw.get("to", ""),
+        "asset_type": "INTERNAL_ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": value_eth,
+        "timestamp": raw.get("timeStamp", "0"),
+        "is_error": raw.get("isError", "0"),
+    }
+
+
+def normalize_all_transfers(eth_txs: list, erc20_txs: list, internal_txs: list) -> list:
+    """Combine ETH, ERC-20, and internal transactions into one normalized list.
+
+    Accepts three lists of raw transaction dicts and returns one combined
+    list of normalized transfer dicts with consistent field names.
+    """
+    normalized = []
+    for raw in eth_txs:
+        normalized.append(normalize_eth_transaction(raw))
+    for raw in erc20_txs:
+        normalized.append(normalize_erc20_transfer(raw))
+    for raw in internal_txs:
+        normalized.append(normalize_internal_transaction(raw))
+    return normalized
+
+
+def test_normalize_transactions() -> None:
+    """Test the normalization functions for ETH, ERC-20, and internal transactions.
+
+    Verifies that all three normalization functions correctly convert
+    their respective raw data formats into the common dictionary structure
+    with consistent field names: hash, from_address, to_address,
+    asset_type, asset_contract, symbol, amount, timestamp.
+    """
+    import json
+
+    # Raw ETH transaction data
+    eth_raw = {
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "value": "1000000000000000000",
+        "hash": "0xethhash1",
+        "timeStamp": "1609459200",
+    }
+
+    # Raw ERC-20 transfer data (USDT with 6 decimals)
+    erc20_raw = {
+        "hash": "0xmocktokenhash1",
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tokenContractAddress": "0xcccccccccccccccccccccccccccccccccccccccc",
+        "tokenSymbol": "USDT",
+        "tokenDecimal": "6",
+        "value": "1000000",
+        "timeStamp": "1609459200",
+    }
+
+    # Raw internal transaction data
+    internal_raw = {
+        "hash": "0xinternalhash1",
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "value": "500000000000000000",
+        "timeStamp": "1609459200",
+        "isError": "0",
+    }
+
+    # Normalize each type
+    eth_norm = normalize_eth_transaction(eth_raw)
+    erc20_norm = normalize_erc20_transfer(erc20_raw)
+    internal_norm = normalize_internal_transaction(internal_raw)
+
+    # Verify ETH normalization
+    assert eth_norm["hash"] == "0xethhash1"
+    assert eth_norm["from_address"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert eth_norm["to_address"] == "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert eth_norm["asset_type"] == "ETH"
+    assert eth_norm["asset_contract"] is None
+    assert eth_norm["symbol"] == "ETH"
+    assert eth_norm["amount"] == 1.0  # 1e18 / 1e18
+    assert eth_norm["timestamp"] == "1609459200"
+
+    # Verify ERC-20 normalization (USDT with 6 decimals)
+    assert erc20_norm["hash"] == "0xmocktokenhash1"
+    assert erc20_norm["from_address"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert erc20_norm["to_address"] == "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert erc20_norm["asset_type"] == "ERC20"
+    assert erc20_norm["asset_contract"] == "0xcccccccccccccccccccccccccccccccccccccccc"
+    assert erc20_norm["symbol"] == "USDT"
+    assert erc20_norm["amount"] == 1.0  # 1000000 / 10**6 (6 decimals)
+    assert erc20_norm["timestamp"] == "1609459200"
+
+    # Verify internal normalization
+    assert internal_norm["hash"] == "0xinternalhash1"
+    assert internal_norm["from_address"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert internal_norm["to_address"] == "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert internal_norm["asset_type"] == "INTERNAL_ETH"
+    assert internal_norm["asset_contract"] is None
+    assert internal_norm["symbol"] == "ETH"
+    assert internal_norm["amount"] == 0.5  # 5e17 / 1e18
+    assert internal_norm["timestamp"] == "1609459200"
+    assert internal_norm["is_error"] == "0"
+
+    # Verify normalize_all_transfers combines all three types
+    from eth_txs import normalize_all_transfers
+    eth_list = [eth_raw]
+    erc20_list = [erc20_raw]
+    internal_list = [internal_raw]
+    all_norm = normalize_all_transfers(eth_list, erc20_list, internal_list)
+    assert len(all_norm) == 3
+    assert all_norm[0]["asset_type"] == "ETH"
+    assert all_norm[1]["asset_type"] == "ERC20"
+    assert all_norm[2]["asset_type"] == "INTERNAL_ETH"
+
+    print("test_normalize_transactions passed!")
+
+
+
 def test_internal_transactions() -> None:
     """Test the --internal CLI flow using a mocked Etherscan API response.
 
@@ -1082,7 +1252,6 @@ def test_internal_transactions() -> None:
         os.remove("test_internal.json")
 
     print("test_internal_transactions passed!")
-
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
