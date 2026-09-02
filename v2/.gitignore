@@ -1,2 +1,4 @@
 transaction.json
 token_transfers.json
+internal_transactions.json
+.env
