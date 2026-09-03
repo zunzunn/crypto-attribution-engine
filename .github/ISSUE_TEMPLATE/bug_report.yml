@@ -1,0 +1,47 @@
+name: 🐛 Bug Report
+description: Report an issue or unexpected behavior in the Crypto Attribution Engine
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for filing a bug report! Please provide as much detail as possible.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Clear explanation of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can maintainers reproduce the issue?
+      placeholder: |
+        1. Run `python eth_txs.py test`
+        2. Enter address `0x...` in 3D Dashboard
+        3. See error
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      options:
+        - 3D Frontend Dashboard
+        - Backend FastAPI REST Layer
+        - Ethereum Core Traversal Engine
+        - Obfuscation Pattern Detector
+        - Docker Setup
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, Node version, Docker version.
+      value: |
+        - OS: Windows 11 / Linux
+        - Python: 3.12
+        - Node: 20

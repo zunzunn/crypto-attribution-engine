@@ -1,285 +1,270 @@
-# Crypto Attribution Engine
+<div align="center">
 
-> A thesis project for evidence-based cryptocurrency transaction tracing and entity attribution to support investigators.
+# 🛡️ Crypto Attribution Engine v2.0
+### *Next-Gen Cybercrime Blockchain Forensics, 3D Cyberspace Visualization & SAHYOG Threat Attribution*
 
-**Status:** `Phase 2 — Graph, traversal & entity attribution` — Ethereum (Etherscan) ingestion, plus a deterministic traversal engine, entity registry, confidence scoring, and the `POST /api/v1/attribution/investigate` API are live with 132 passing tests. Risk scoring, dashboard, and reporting are not started. See [ROADMAP.md](ROADMAP.md).
+[![Backend CI](https://github.com/zunzunn/crypto-attribution-engine/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/zunzunn/crypto-attribution-engine/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/zunzunn/crypto-attribution-engine/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/zunzunn/crypto-attribution-engine/actions/workflows/frontend-ci.yml)
+[![Main CI](https://github.com/zunzunn/crypto-attribution-engine/actions/workflows/main-ci.yml/badge.svg)](https://github.com/zunzunn/crypto-attribution-engine/actions/workflows/main-ci.yml)
+[![Docker Ready](https://img.shields.io/badge/Docker-Containerized-blue?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![Three.js](https://img.shields.io/badge/Three.js-3D%20WebGL-black?logo=three.js&logoColor=white)](https://threejs.org)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
----
+<p align="center">
+  <b>Automated multi-hop fund tracing, behavioral obfuscation detection, entity attribution, and evidence-based risk scoring designed for cybercrime investigators and law enforcement authorities.</b>
+</p>
 
-## 1. Purpose
-
-The Crypto Attribution Engine is an investigative support system that traces cryptocurrency fund flows originating from a suspect or unhosted wallet, identifies likely intermediary entities(exchanges/VASPs, mixers, bridges, swap services), and produces auditable, evidence-backed outputs for investigators.
-
-It does **not** claim to prove wallet ownership. It provides **probable attribution** with explicit confidence levels and linked evidence — suitable for further investigation and lawful information requests.
-
-Planned downstream outputs:
-
-- Visual transaction graph with hop-by-hop evidence.
-- Attribution and risk scores per path and per entity.
-- Investigation-ready report (PDF/JSON).
-- SAHYOG-compatible payload for inter-agency sharing (schema-aligned, not yet integrated with a live portal).
-
----
-
-## 2. Problem Statement
-
-Cryptocurrency investigations face recurring challenges:
-
-1. **Pseudonymity** — Addresses are not directly tied to real-world identities; attribution requires corroborating evidence.
-2. **High transaction volume and speed** — Manual tracing across hops does not scale.
-3. **Obfuscation techniques** — Mixers, chain-hopping via bridges, and rapid swaps are used to break the trail.
-4. **Fragmented tooling** — Investigators switch between block explorers, spreadsheets, and ad-hoc scripts; provenance and reproducibility suffer.
-5. **Reporting gap** — Findings must be converted into a defensible, shareable report and — in the Indian LEA context — into a format compatible with the SAHYOG portal workflow.
-
-This project addresses these gaps with a single, auditable pipeline from ingestion to reporting.
+[Explore Features](#-key-capabilities) • [Architecture](#-system-architecture) • [Quick Start](#-quick-start) • [Interactive 3D UI](#-realtime-3d-interactive-dashboard) • [API Docs](#-api-endpoints) • [Contributing](#-contributing--branching-workflow)
 
 ---
 
-## 3. Goals
+</div>
 
-### Primary goals
+## 📌 Executive Summary & Thesis Context
 
-- Trace fund flows forward (and optionally backward) from a seed address within bounded, explainable constraints.
-- Attribute intermediary hops to entity categories with a transparent confidence score and evidence bundle.
-- Surface risk signals (e.g., mixer interaction, high-risk VASP, rapid peel chains).
-- Visualize paths as an interactive graph for investigative review.
-- Export reproducible reports and a SAHYOG-compatible JSON payload.
+Cryptocurrency scammers and cybercriminals intentionally obscure stolen assets across complex transaction paths: **wallet hopping, fan-out splitting, fan-in consolidation, privacy mixers (Tornado Cash), cross-chain bridges, and VASP exchange deposit endpoints**. 
 
-### Non-goals (for this thesis scope)
-
-- Real-time mempool monitoring or cross-border live enforcement integration.
-- Custodial key management or transaction signing.
-- Claiming definitive ownership of any address.
-- Replacing legal process — the system supports, but does not substitute, lawful requests to VASPs/LEAs.
+The **Crypto Attribution Engine** automates the labor-intensive blockchain investigation pipeline:
+- Ingests native **ETH**, **ERC-20** (USDT, USDC with decimal normalization), and **internal contract transactions**.
+- Builds directed multi-graphs and performs bounded **Breadth-First Search (BFS) multi-hop tracing**.
+- Discovers and attributes addresses against **Intelligence Registries** and **Etherscan Nametag Metadata** with explicit provenance.
+- Detects complex **laundering obfuscation patterns** (Splitting, Consolidation, Rapid Hopping, Layering).
+- Produces court-admissible, evidence-based **Investigative Risk Scores** and **SAHYOG-compliant forensic reports** for swift asset freezing.
 
 ---
 
-## 4. Planned Tech Stack
+## 🏛️ System Architecture
 
-| Layer               | Choice                                                                 | Rationale                                                                                                                                                                                                    |
-| ------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Backend API         | **Python 3.11+ + FastAPI**                                             | Async-friendly, strong typing via Pydantic, good fit for data-heavy services.                                                                                                                                |
-| Storage (initial)   | **PostgreSQL 15+**                                                     | Relational core for transactions, addresses, entities, investigations. Sufficient for thesis scale; graph extensions or a dedicated graph store can be introduced later if traversal performance demands it. |
-| Frontend            | **React + TypeScript + Vite**                                          | Modern, well-documented, large ecosystem.                                                                                                                                                                    |
-| Graph visualization | **Cytoscape.js**                                                       | Mature, supports directed graphs, layouts, and investigator-friendly interactions. Kept unless a strong technical reason emerges (e.g., WebGL scale needs).                                                  |
-| Auth (planned)      | JWT or session-based, role-gated                                       | Investigator / reviewer roles. Exact choice deferred to API phase.                                                                                                                                           |
-| Reporting           | PDF generation from backend (e.g., WeasyPrint/ReportLab) + JSON export | Deterministic, server-side rendering.                                                                                                                                                                        |
+```mermaid
+flowchart TD
+    classDef input fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff;
+    classDef engine fill:#1e293b,stroke:#00f0ff,stroke-width:2px,color:#fff;
+    classDef pattern fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#fff;
+    classDef risk fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fff;
+    classDef ui fill:#022c22,stroke:#10b981,stroke-width:2px,color:#fff;
 
-> Stack may evolve with justification; changes will be documented in [ARCHITECTURE.md](ARCHITECTURE.md).
+    Seed[🚨 Suspicious Seed Address]:::input --> Ingest[Data Ingestion Engine]:::engine
+    
+    subgraph Core Pipeline
+        Ingest --> ETH[ETH Transfers]
+        Ingest --> ERC20[ERC-20 Tokens]
+        Ingest --> Internal[Internal Contract Calls]
+        
+        ETH & ERC20 & Internal --> Normalizer[Unified Normalization Model]:::engine
+        Normalizer --> Graph[Unified Directed Transaction Graph]:::engine
+        Graph --> BFS[Multi-Hop BFS Traversal Engine]:::engine
+    end
 
----
+    subgraph Attribution & Intelligence
+        BFS --> AttribEngine[Combined Attribution Engine]:::engine
+        LocalReg[(Local Threat Intelligence)] --> AttribEngine
+        EtherscanMeta[(Etherscan V2 Metadata)] --> AttribEngine
+        AttribEngine --> Evidence[Evidence & Conflict Ledger]:::engine
+    end
 
-## 5. High-Level Workflow
+    subgraph Behavioral Obfuscation Detection
+        Graph --> Patterns[Pattern Detection Engine]:::pattern
+        Patterns --> FanOut[⚡ Fan-Out Splitting]:::pattern
+        Patterns --> FanIn[⚡ Fan-In Consolidation]:::pattern
+        Patterns --> RapidHop[⚡ Rapid Wallet Hopping]:::pattern
+        Patterns --> Layering[⚡ Multi-Hop Layering]:::pattern
+    end
 
-```
-Investigator input (seed address, chain, time/case context)
-        |
-        v
-  Blockchain data ingestion (per-chain adapter -> normalized TX model)
-        |
-        v
-  PostgreSQL persistence (addresses, transactions, entities, investigations)
-        |
-        v
-  Transaction graph construction
-        |
-        v
-  Traversal engine (BFS/DFS with hop, time, and value constraints)
-        |
-        v
-  Entity attribution (VASP/mixer/bridge/swap tagging + matching)
-        |
-        v
-  Risk & confidence scoring
-        |
-        v
-  FastAPI backend (REST: investigations, traces, entities, reports)
-        |
-        v
-  React dashboard (Cytoscape.js graph, evidence panel, case view)
-        |
-        v
-  Reporting & SAHYOG-compatible export
-```
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for component details and [ATTRIBUTION.md](ATTRIBUTION.md) for the scoring methodology.
-
----
-
-## 6. Repository Structure
-
-```
-crypto_attribution_engine/
-├── README.md
-├── REQUIREMENTS.md
-├── ARCHITECTURE.md
-├── ATTRIBUTION.md
-├── ROADMAP.md
-├── compose.yaml             # optional local PostgreSQL (Docker)
-├── v1/docker/postgres/init/    # dev-only: creates crypto_attribution_test
-├── Makefile
-├── v1/backend/                 # Python + FastAPI (Phase 1)
-│   ├── .env.example         # documented placeholders; copy to .env
-│   ├── requirements.txt / requirements-dev.txt
-│   ├── pytest.ini
-│   ├── alembic.ini / alembic/  # DB migrations (versions/0001_initial.py)
-│   ├── app/
-│   │   ├── main.py          # app factory
-│   │   ├── api/routes/      # health, ingest, transactions endpoints
-│   │   ├── core/            # settings (env-driven), logging, errors
-│   │   ├── db/              # engine, session, declarative base
-│   │   ├── models/          # transactions, token_transfers, ingestion_runs
-│   │   ├── repositories/    # idempotent upserts + audit runs
-│   │   ├── schemas/         # canonical transaction schema (chain-agnostic)
-│   │   ├── services/ingestion/  # Etherscan client, normalizer, adapter, registry
-│   │   └── utils/           # address validation, time helpers
-│   └── tests/               # unit + API tests (pytest)
-├── frontend/                # React scaffold (not started)
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── services/        # API clients
-│   │   ├── hooks/
-│   │   └── utils/
-│   └── public/
-├── docs/                    # supplementary docs, diagrams, ADRs
-├── data/
-│   ├── raw/                 # ignored; local chain exports
-│   ├── processed/           # ignored; derived datasets
-│   └── fixtures/            # synthetic examples (no real PII)
-└── scripts/                 # one-off maintenance scripts
+    subgraph Risk Assessment & Delivery
+        Evidence & Patterns --> RiskScore[Evidence-Based Risk Scoring]:::risk
+        RiskScore --> API[FastAPI REST Layer]:::engine
+        API --> WebGL[3D Interactive WebGL Dashboard]:::ui
+        API --> Report[Forensic Markdown / JSON Report]:::ui
+        Report --> SAHYOG[SAHYOG Law Enforcement Portal]:::input
+    end
 ```
 
 ---
 
-## 7. Current Development Status
+## 🚀 Key Capabilities
 
-| Phase                                   | Status                                                                                                                                                                                                                |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0 — Documentation & repo bootstrap      | **Completed**                                                                                                                                                                                                         |
-| 1 — Data ingestion (backend foundation) | **Completed** — Ethereum (Etherscan V2) adapter, canonical model, idempotent PostgreSQL persistence, `/health` + ingestion API. Token-transfer (`tokentx`) ingestion is a documented follow-on.                       |
-| 2 — Database / graph construction       | **Completed** — `GraphBuilder` derives a directed transaction graph from persisted rows; `DatabaseGraphExpander` loads outgoing edges (native + token evidence) on demand.                                            |
-| 3 — Traversal engine                    | **Completed** — deterministic bounded BFS (`TraversalEngine`): hop limits, time window, min value, per-hop/global edge caps, cycle & revisit handling, evidence-preserving paths.                                     |
-| 4 — Entity attribution                  | **Completed** — local `entities` / `entity_addresses` registry with exact-match lookup, `ConfidenceScorer` (probabilistic score + tier + factors), and `AttributionService` combining traversal + registry + scoring. |
-| 5 — Risk scoring                        | Not started                                                                                                                                                                                                           |
-| 6 — API                                 | Partial — Phase 1 base routes live plus `POST /api/v1/attribution/investigate`; auth/reporting endpoints in later phases                                                                                              |
-| 7 — Dashboard                           | Not started                                                                                                                                                                                                           |
-| 8 — Reporting & SAHYOG export           | Not started                                                                                                                                                                                                           |
-| 9 — Testing & hardening                 | Partial — unit + API tests for Phases 1–4 are in place (132 tests)                                                                                                                                                    |
+### 1. 🌐 Realtime 3D WebGL Cyberspace Visualizer
+- **Living Blockchain Particle Constellation:** 180+ floating nodes with dynamic proximity laser connections drifting in 3D coordinate space.
+- **Realtime Mouse Parallax:** Hardware-accelerated camera tilting and fluid perspective panning reacting to user cursor movement.
+- **Glowing Emissive 3D Entity Nodes:**
+  - 🔴 **Mixers:** Crimson Red (`#ef4444`)
+  - 🔵 **VASPs / Exchanges:** Electric Blue (`#3b82f6`)
+  - 🟡 **Bridges:** Golden Amber (`#f59e0b`)
+  - 🟣 **Scams / Phishing Drainers:** Neon Purple (`#a855f7`)
+  - 🌐 **Target Suspect Address:** Glowing Cyan Pulsing Ring (`#00f0ff`)
+- **Realtime Particle Streams:** Animated light particles traveling continuously along transaction links to visualize laundering flow velocity.
+- **Dual Mode Switcher:** Instant 1-click toggle between **3D WebGL Force Graph** and **2D Dagre Hierarchical Layout**.
 
-**Working today:**
+### 2. 🛡️ Multi-Source Attribution with Conflict Resolution
+- Combines local synthetic/verified registries with live Etherscan V2 Nametag intelligence.
+- Scaled confidence conventions ($0.0 \rightarrow 1.0$) with transparent source provenance.
+- **Conflict Preservation:** Contradictory attributions between intelligence sources are never silently masked.
 
-- `GET /health` — liveness + DB readiness probe.
-- `POST /api/v1/ingest/{chain}/{address}` — fetch (Etherscan V2) → normalize → persist idempotently; returns an ingestion-run summary with inserted/skipped counts.
-- `GET /api/v1/ingest/{chain}/{address}` — list persisted transactions for an address.
-- `GET /api/v1/ingestion-runs/{id}` and `GET /api/v1/transactions/{hash}` — audit/query endpoints.
-- `POST /api/v1/attribution/investigate` — traversal + entity attribution for a seed address; returns ranked candidates with confidence scores, hop-by-hop evidence, token-transfer evidence, and traversal stats. Supports `max_hops`, `min_value`, and a `time_from`/`time_to` window.
-- Chain-agnostic canonical `Transaction` model, `transactions` / `token_transfers` / `ingestion_runs` tables, Alembic migrations `0001_initial` / `0002_entities`.
+### 3. ⚡ Automated Laundering Pattern Detection
+- **Fan-Out (Splitting):** Detects single addresses disbursing stolen funds across $\ge 3$ distinct recipient wallets.
+- **Fan-In (Consolidation):** Identifies wallets aggregating funds from $\ge 3$ distinct source addresses.
+- **Rapid Wallet Hopping:** Flags consecutive multi-hop transactions occurring within $< 15$ minutes.
+- **Multi-Hop Layering:** Detects long linear transit paths ($\ge 3$ sequential hops).
 
-No Ethereum API key or committed secrets are bundled; Etherscan without a key returns a clear configuration error. Bitcoin / Tron / Polygon / Solana adapters are not started (Ethereum must be working first).
+### 4. ⚖️ Evidence-Based Risk Scoring
+- Deterministic, explainable scoring based on verified threat indicators:
+  $$\text{Risk Score} = \min\left(100, \, (\text{Base Risk} \times \text{Confidence}) - (3 \times \text{Hop Distance})\right)$$
+- Categorized into clear priority tiers: **Low (<25)**, **Medium (25–49)**, **High (50–74)**, and **Critical ($\ge 75$)**.
+
+### 5. 📑 Forensic Report Exporter (SAHYOG Portal Ready)
+- One-click export of complete case dossiers in **Markdown** and **JSON** formats.
+- Pre-structured with Case IDs, target address hashes, trace timelines, entity tables, and legal investigative disclaimers.
 
 ---
 
-## 8. Getting Started (Repository Only — No Live Ingestion Yet)
+## 💻 Quick Start
 
-Prerequisites: Python 3.11+, PostgreSQL 15+ running locally (or Docker; see
-`compose.yaml`). Docker is optional.
+### Option A: 🐳 Docker Compose (Recommended)
+
+Run the full stack (FastAPI Backend + Production Nginx Frontend) in one command:
 
 ```bash
-# 1) Backend virtualenv + dependencies
-make backend-install                      # or: python3 -m venv v1/backend/.venv && \
-                                          # backward compat: see Makefile
+# 1. Clone repository
+git clone https://github.com/zunzunn/crypto-attribution-engine.git
+cd crypto-attribution-engine/v2
 
-# 2) PostgreSQL
-#   - Local Homebrew Postgres is already running for this setup; or:
-#       docker compose up -d postgres     # if you use the Docker service
-#   - Create databases (once):
-#       createdb crypto_attribution
-#       createdb crypto_attribution_test
-#   - Or apply the Alembic migration instead (recommended once on dev DB):
-#       make migrate-db                    # creates tables via alembic upgrade head
+# 2. (Optional) Set your Etherscan API key
+echo "ETHERSCAN_API_KEY=your_api_key_here" > .env
 
-# 3) Configuration
-cp v1/backend/.env.example v1/backend/.env       # then fill in ETHERSCAN_API_KEY
-# DATABASE_URL and TEST_DATABASE_URL point at local profiles by default.
-
-# 4) Run the API
-make dev                                   # uvicorn on http://127.0.0.1:8000
-
-# 5) Check it
-curl http://127.0.0.1:8000/health          # {"status":"ok", ...}
-curl http://127.0.0.1:8000/docs            # interactive OpenAPI
+# 3. Build & launch containers
+docker compose up --build -d
 ```
 
-### Tests
-
-```bash
-# Against a real PostgreSQL test database (recommended)
-TEST_DATABASE_URL=postgresql+asyncpg://<user>@localhost:5432/crypto_attribution_test \
-  .venv/bin/pytest                          # from v1/backend/
-
-# Or SQLite fallback (no Postgres needed)
-cd backend && .venv/bin/pytest
-```
-
-See `v1/backend/.env.example` for the complete configuration surface.
-
-### Demo data for manual API testing (development only)
-
-A dev-only, deterministic **synthetic** dataset can be seeded into the
-development PostgreSQL database so endpoints such as
-`POST /api/v1/attribution/investigate` can be exercised end-to-end by hand.
-
-> :warning: The addresses below are **fake** (`0x0000…0001`-style dummies) —
-> not real exchange/VASP wallets. The demo entity is tagged
-> `tag_source=demo_fixture_v1` and is clearly marked as a development fixture.
-> Never point these commands at a production database.
-
-The demo graph is: `SEED (0x…0001) → INTER (0x…0004) → VASP_A (0x…0064)`, with
-VASP_A registered as the synthetic entity _"Candidate VASP alpha"_. All hashes
-and timestamps are deterministic and match the test-factory conventions.
-
-```bash
-# Seed (idempotent — safe to re-run; duplicate rows are skipped)
-# Uses DATABASE_URL from v1/backend/.env; creates missing tables if needed.
-make seed-demo
-
-# Optional: point at a different database instead of v1/backend/.env
-cd backend && .venv/bin/python -m app.dev.seed_demo --database-url \
-  postgresql+asyncpg://<user>@localhost:5432/crypto_attribution
-
-# Manual end-to-end check
-curl -X POST http://127.0.0.1:8000/api/v1/attribution/investigate \
-  -H 'Content-Type: application/json' \
-  -d '{"chain_id":"ethereum","network":"mainnet",
-       "seed_address":"0x0000000000000000000000000000000000000001",
-       "max_hops":3}'
-```
-
-To remove **only the demo-owned rows** (leaving any other data untouched):
-
-```bash
-make reset-demo
-```
-
-See `v1/backend/app/dev/` (fixtures + CLI) for details.
+| Service | Endpoint | Description |
+| :--- | :--- | :--- |
+| **Frontend UI** | [http://localhost:5173](http://localhost:5173) | 3D Interactive Cyberspace Dashboard |
+| **Backend REST API** | [http://localhost:8000](http://localhost:8000) | Python Forensic Tracing Engine |
+| **Interactive Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) | Swagger OpenAPI Specification |
 
 ---
 
-## 9. Contributing & Thesis Notes
+### Option B: 🛠️ Native Development Setup
 
-- Keep commits scoped to one ROADMAP phase at a time.
-- No fake data, keys, or integrations should be committed. Synthetic fixtures must be clearly labeled as synthetic.
-- All attribution outputs must carry confidence and evidence — see [ATTRIBUTION.md](ATTRIBUTION.md).
-- Security and PII handling: see [REQUIREMENTS.md](REQUIREMENTS.md).
+#### 1. Backend Service
+```bash
+cd v2/backend
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run all 41 test suites
+python eth_txs.py test
+python pattern_detector.py
+python report_generator.py
+
+# Launch FastAPI server
+python api.py
+```
+
+#### 2. Frontend Application
+```bash
+cd v2/frontend
+
+# Install dependencies
+npm install
+
+# Start Vite development server
+npm run dev
+```
 
 ---
 
-## 10. References
+## 📡 API Endpoints
 
-- SAHYOG portal — inter-agency coordination workflow for cybercrime investigations (payload alignment is planned; live portal integration is out of scope for the bootstrap).
-- Relevant standards/concepts: FATF VASP definitions, UTXO vs. account-based models, chain-hopping via bridges.
+The FastAPI backend exposes clean, validated REST endpoints:
+
+```http
+GET  /                          # Health check & engine metadata
+GET  /api/v2/address/{address}  # Single address intelligence & attribution lookup
+POST /api/v2/trace              # Execute multi-hop BFS trace, risk scoring & pattern detection
+POST /api/v2/report             # Generate structured JSON and Markdown investigation reports
+```
+
+#### Example Trace Request:
+```bash
+curl -X POST "http://localhost:8000/api/v2/trace" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "target_address": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+       "max_hops": 3,
+       "use_etherscan": false
+     }'
+```
 
 ---
 
-_This README will be updated as each phase lands. For detailed specs, see REQUIREMENTS.md, ARCHITECTURE.md, ATTRIBUTION.md, and ROADMAP.md._
+## 📂 Repository Map
+
+```text
+crypto-attribution-engine/
+├── .github/
+│   ├── workflows/             # CI/CD Workflows (Frontend, Backend, Main)
+│   ├── ISSUE_TEMPLATE/        # Structured Bug & Feature Templates
+│   └── pull_request_template.md
+├── v1/                        # Legacy prototype archive
+└── v2/                        # Active Modular Forensic Platform
+    ├── backend/               # Python Attribution & Tracing Service
+    │   ├── api.py             # FastAPI REST Server
+    │   ├── eth_txs.py         # Core Etherscan V2 & Graph Engine
+    │   ├── chain_adapter.py   # Blockchain Multi-Chain Adapter Base
+    │   ├── pattern_detector.py# Obfuscation Pattern Analysis Engine
+    │   ├── report_generator.py# Law Enforcement Report Exporter
+    │   ├── address_registry.json
+    │   ├── requirements.txt
+    │   └── Dockerfile
+    ├── frontend/              # React 18 3D Interactive Web Dashboard
+    │   ├── src/
+    │   │   ├── components/    # CyberBackground3D, ForceGraph3D, CytoscapeGraph
+    │   │   ├── services/      # API client & realistic mock datasets
+    │   │   └── utils/         # Formatting & styling utilities
+    │   ├── package.json
+    │   ├── tailwind.config.js
+    │   └── Dockerfile
+    └── compose.yaml           # Multi-Container Docker Compose Orchestration
+```
+
+---
+
+## 🌿 Contributing & Branching Workflow
+
+This project adheres to a strict multi-branch lifecycle:
+
+| Branch | Purpose | Protected Rules |
+| :--- | :--- | :--- |
+| `main` | Production-ready stable release | Automated Docker & Full-Stack CI verification |
+| `develop` | Integration branch for testing components | CI builds on every push |
+| `feature/frontend` | UI/UX, 3D visualizer, and dashboard design | Triggers `frontend-ci.yml` |
+| `feature/backend` | Core Python engine, pattern detectors & APIs | Triggers `backend-ci.yml` |
+
+1. Clone the repo and switch to your feature branch:
+   ```bash
+   git switch feature/frontend  # or feature/backend
+   ```
+2. Commit changes using Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`).
+3. Ensure test suites pass before pushing:
+   ```bash
+   # Backend: python eth_txs.py test
+   # Frontend: npm run build
+   ```
+4. Open a Pull Request into `develop`.
+
+---
+
+## ⚖️ Legal & Investigative Disclaimer
+
+> **Important:** The Crypto Attribution Engine is designed exclusively as an **investigative decision-support system**. Attribution scores reflect probabilistic and evidence-backed indicators. Output scores and entity labels represent investigative prioritization signals and **do NOT constitute autonomous legal proof of criminal guilt**. Asset freezing and legal disclosures must be conducted through authorized legal procedures under applicable law and jurisdictional frameworks.
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.

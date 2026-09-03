@@ -1,0 +1,34 @@
+name: 💡 Feature Request
+description: Suggest an enhancement or new feature for the Crypto Attribution Engine
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for suggesting a feature to improve the Crypto Attribution Engine!
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a specific problem or investigation friction?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Detailed description of what you want to happen.
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      options:
+        - Multi-chain Adapters (TRON, Bitcoin, Solana)
+        - 3D Visualizer & UI Enhancements
+        - Behavioral Pattern Detectors
+        - SAHYOG Portal / Legal Integrations
+        - Performance & Caching
+    validations:
+      required: true
