@@ -24,6 +24,25 @@ def is_valid_tron_address(address: str) -> bool:
     return True
 
 
+# Synthetic bridge registry for test purposes.
+# This is test intelligence - does not represent real bridge data.
+# Mappings from source addresses to bridge info including destination chains.
+SYNTHETIC_BRIDGE_REGISTRY = {
+    "ethereum": {
+        "0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb": {
+            "bridge_name": "Synthetic Bridge",
+            "destination_chains": ["tron"],
+        }
+    },
+    "tron": {
+        "T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q": {
+            "bridge_name": "Synthetic Bridge",
+            "source_chains": ["ethereum"],
+        }
+    },
+}
+
+
 class ChainAdapter(abc.ABC):
     """Base interface for blockchain chain adapters.
 
@@ -727,3 +746,718 @@ def test_ethereum_adapter_still_works() -> None:
     adapter = EthereumAdapter()
     assert adapter.get_chain_id() == "ethereum"
     assert adapter.validate_address("0x" + "a" * 40) is True
+
+
+# Cross-Chain Trace Foundation
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class CrossChainLink:
+    """Evidence-aware representation of a cross-chain transaction link.
+
+    Represents a potential bridge or transfer relationship between two
+    blockchain transactions. Distinguishes between observed facts and
+    inferred/linked relationships.
+
+    Attributes:
+        source_chain: The blockchain where the transaction originated.
+        source_tx_hash: Optional hash of the source transaction.
+        source_address: The source address on the source chain.
+        source_asset: The asset/token transferred from source.
+        destination_chain: The blockchain where the transaction arrived.
+        destination_tx_hash: Optional hash of the destination transaction.
+        destination_address: The destination address on the destination chain.
+        destination_asset: The asset/token received on destination.
+        bridge_address: Optional address of the bridge contract/interface.
+        bridge_name: Optional human-readable name of the bridge.
+        confidence: Confidence score (0.0 to 1.0) in this link being valid.
+        evidence: Description of the evidence supporting this link.
+        source: Source of this link information (e.g., "etherscan", "trongrid", "user").
+    """
+
+    source_chain: str
+    source_tx_hash: Optional[str] = None
+    source_address: str = ""
+    source_asset: str = ""
+    destination_chain: str = ""
+    destination_tx_hash: Optional[str] = None
+    destination_address: str = ""
+    destination_asset: str = ""
+    bridge_address: Optional[str] = None
+    bridge_name: Optional[str] = None
+    confidence: float = 0.5
+    evidence: str = ""
+    source: str = ""
+
+
+def create_cross_chain_link(
+    source_chain: str,
+    source_address: str,
+    source_asset: str,
+    destination_chain: str,
+    destination_address: str,
+    destination_asset: str,
+    *,
+    source_tx_hash: Optional[str] = None,
+    destination_tx_hash: Optional[str] = None,
+    bridge_address: Optional[str] = None,
+    bridge_name: Optional[str] = None,
+    confidence: float = 0.5,
+    evidence: str = "",
+    source: str = "",
+) -> CrossChainLink:
+    """Create a CrossChainLink with validation.
+
+    Validates that confidence is between 0.0 and 1.0.
+    All required string fields must be non-empty.
+    """
+    if not (0.0 <= confidence <= 1.0):
+        raise ValueError(f"confidence must be between 0.0 and 1.0, got {confidence}")
+
+    link = CrossChainLink(
+        source_chain=source_chain,
+        source_tx_hash=source_tx_hash,
+        source_address=source_address,
+        source_asset=source_asset,
+        destination_chain=destination_chain,
+        destination_tx_hash=destination_tx_hash,
+        destination_address=destination_address,
+        destination_asset=destination_asset,
+        bridge_address=bridge_address,
+        bridge_name=bridge_name,
+        confidence=confidence,
+        evidence=evidence,
+        source=source,
+    )
+
+    # Validate after construction
+    _validate_cross_chain_link(link)
+    return link
+
+
+def validate_cross_chain_link(link: CrossChainLink) -> bool:
+    """Validate a CrossChainLink instance.
+
+    Checks:
+    - source and destination chains are present (non-empty)
+    - source and destination addresses are present (non-empty)
+    - source_chain != destination_chain (must be cross-chain)
+    - confidence is within 0.0-1.0
+    - evidence is present (non-empty)
+    - source information is preserved
+
+    Returns True if valid, raises ValueError if invalid.
+    """
+    # Internal validation shared with create_cross_chain_link
+    _validate_cross_chain_link(link)
+
+    # Additional checks specific to validate_cross_chain_link public API
+    if not link.source or not link.source.strip():
+        raise ValueError("source must be non-empty")
+
+    return True
+
+
+def _validate_cross_chain_link(link: CrossChainLink) -> None:
+    """Internal validation for CrossChainLink.
+
+    Raises ValueError if the link is invalid.
+    """
+    errors = []
+
+    if not link.source_chain or not link.source_chain.strip():
+        errors.append("source_chain must be non-empty")
+    if not link.source_address or not link.source_address.strip():
+        errors.append("source_address must be non-empty")
+    if not link.destination_chain or not link.destination_chain.strip():
+        errors.append("destination_chain must be non-empty")
+    if not link.destination_address or not link.destination_address.strip():
+        errors.append("destination_address must be non-empty")
+    if link.source_chain == link.destination_chain:
+        errors.append("source_chain and destination_chain must be different (cross-chain)")
+    if not (0.0 <= link.confidence <= 1.0):
+        errors.append(f"confidence must be between 0.0 and 1.0, got {link.confidence}")
+    if not link.evidence or not link.evidence.strip():
+        errors.append("evidence must be non-empty")
+
+    if errors:
+        raise ValueError("CrossChainLink validation failed: " + "; ".join(errors))
+
+
+# End of cross-chain module
+
+
+def test_valid_ethereum_to_tron_link() -> None:
+    """Test a valid Ethereum -> TRON cross-chain link."""
+    from chain_adapter import (
+        CrossChainLink,
+        create_cross_chain_link,
+        validate_cross_chain_link,
+    )
+
+    link = create_cross_chain_link(
+        source_chain="ethereum",
+        source_address="0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb",
+        source_asset="ETH",
+        destination_chain="tron",
+        destination_address="T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q",
+        destination_asset="TRX",
+        evidence="Etherscan tag + TronGrid naming analysis",
+        source="cross_chain_analysis_v1",
+    )
+
+    assert link.source_chain == "ethereum"
+    assert link.destination_chain == "tron"
+    assert link.source_address == "0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb"
+    assert link.destination_address == "T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q"
+    assert link.source_asset == "ETH"
+    assert link.destination_asset == "TRX"
+    assert link.confidence == 0.5
+    assert link.evidence == "Etherscan tag + TronGrid naming analysis"
+    assert link.source == "cross_chain_analysis_v1"
+    assert link.source_tx_hash is None  # optional, can be absent
+
+    # Validate
+    assert validate_cross_chain_link(link) is True
+
+
+def test_invalid_confidence_rejected() -> None:
+    """Test that invalid confidence values are rejected."""
+    from chain_adapter import create_cross_chain_link, validate_cross_chain_link
+
+    # confidence > 1.0
+    try:
+        create_cross_chain_link(
+            source_chain="ethereum",
+            source_address="0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb",
+            source_asset="ETH",
+            destination_chain="tron",
+            destination_address="T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q",
+            destination_asset="TRX",
+            confidence=1.5,
+            evidence="test",
+            source="test",
+        )
+        assert False, "Should have raised ValueError for confidence > 1.0"
+    except ValueError:
+        pass
+
+    # confidence < 0.0
+    try:
+        create_cross_chain_link(
+            source_chain="ethereum",
+            source_address="0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb",
+            source_asset="ETH",
+            destination_chain="tron",
+            destination_address="T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q",
+            destination_asset="TRX",
+            confidence=-0.1,
+            evidence="test",
+            source="test",
+        )
+        assert False, "Should have raised ValueError for confidence < 0.0"
+    except ValueError:
+        pass
+
+    # Validate should also reject
+    try:
+        link = CrossChainLink(
+            source_chain="ethereum",
+            source_address="0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb",
+            source_asset="ETH",
+            destination_chain="tron",
+            destination_address="T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q",
+            destination_asset="TRX",
+            confidence=1.5,
+            evidence="test",
+            source="test",
+        )
+        validate_cross_chain_link(link)
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
+
+
+def test_same_chain_link_rejected() -> None:
+    """Test that same-chain links are rejected."""
+    from chain_adapter import create_cross_chain_link, validate_cross_chain_link
+
+    try:
+        create_cross_chain_link(
+            source_chain="ethereum",
+            source_address="0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb",
+            source_asset="ETH",
+            destination_chain="ethereum",  # same as source
+            destination_address="0x111122223333444455556666777788889999aaa",
+            destination_asset="ETH",
+            evidence="test",
+            source="test",
+        )
+        assert False, "Should have raised ValueError for same-chain link"
+    except ValueError:
+        pass
+
+
+def test_missing_evidence_rejected() -> None:
+    """Test that links without evidence are rejected."""
+    from chain_adapter import create_cross_chain_link, validate_cross_chain_link
+
+    # create_cross_chain_link defaults evidence to ""
+    try:
+        link = create_cross_chain_link(
+            source_chain="ethereum",
+            source_address="0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb",
+            source_asset="ETH",
+            destination_chain="tron",
+            destination_address="T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q",
+            destination_asset="TRX",
+            source="test",
+            # evidence defaults to ""
+        )
+        # validate should reject empty evidence
+        validate_cross_chain_link(link)
+        assert False, "Should have raised ValueError for missing evidence"
+    except ValueError:
+        pass
+
+
+def test_destination_tx_hash_optional() -> None:
+    """Test that destination transaction hash can be absent."""
+    from chain_adapter import create_cross_chain_link, validate_cross_chain_link
+
+    link = create_cross_chain_link(
+        source_chain="ethereum",
+        source_address="0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb",
+        source_asset="ETH",
+        destination_chain="tron",
+        destination_address="T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q",
+        destination_asset="TRX",
+        # destination_tx_hash defaults to None
+        evidence="address mapping only",
+        source="cross_chain_analysis_v1",
+    )
+
+    # destination_tx_hash should be None
+    assert link.destination_tx_hash is None
+
+    # Should still validate
+    assert validate_cross_chain_link(link) is True
+
+
+def test_evidence_source_preserved() -> None:
+    """Test that evidence and source are preserved in the link."""
+    from chain_adapter import create_cross_chain_link, validate_cross_chain_link
+
+    link = create_cross_chain_link(
+        source_chain="ethereum",
+        source_address="0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb",
+        source_asset="ETH",
+        destination_chain="tron",
+        destination_address="T9uYyWc51Mhh9qYpY9z74s7B1jmy5Rho6q",
+        destination_asset="TRX",
+        evidence="Multi-source correlation: Etherscan + TronGrid",
+        source="cross_chain_analysis_v2",
+    )
+
+    assert link.evidence == "Multi-source correlation: Etherscan + TronGrid"
+    assert link.source == "cross_chain_analysis_v2"
+    assert validate_cross_chain_link(link) is True
+
+
+def test_existing_ethereum_adapter_still_works() -> None:
+    """Verify existing Ethereum adapter tests still pass."""
+    from chain_adapter import EthereumAdapter
+
+    adapter = EthereumAdapter()
+    assert adapter.get_chain_id() == "ethereum"
+    assert adapter.validate_address("0x" + "a" * 40) is True
+
+
+def test_existing_tron_adapter_still_works() -> None:
+    """Verify existing Tron adapter tests still pass."""
+    from chain_adapter import TronAdapter
+
+    adapter = TronAdapter()
+    assert adapter.get_chain_id() == "tron"
+
+
+# Run all tests when module is executed directly
+if __name__ == "__main__":
+    test_adapter_can_be_created()
+    print("test_adapter_can_be_created passed!")
+
+    test_ethereum_adapter_identifies_as_ethereum()
+    print("test_ethereum_adapter_identifies_as_ethereum passed!")
+
+    test_ethereum_address_validation_works()
+    print("test_ethereum_address_validation_works passed!")
+
+    test_adapter_interface_methods_exist()
+    print("test_adapter_interface_methods_exist passed!")
+
+    test_existing_tests_still_pass()
+    print("test_existing_tests_still_pass passed!")
+
+    # NEW: Cross-chain link tests
+    test_valid_ethereum_to_tron_link()
+    print("test_valid_ethereum_to_tron_link passed!")
+
+    test_invalid_confidence_rejected()
+    print("test_invalid_confidence_rejected passed!")
+
+    test_same_chain_link_rejected()
+    print("test_same_chain_link_rejected passed!")
+
+    test_missing_evidence_rejected()
+    print("test_missing_evidence_rejected passed!")
+
+    test_destination_tx_hash_optional()
+    print("test_destination_tx_hash_optional passed!")
+
+    test_evidence_source_preserved()
+    print("test_evidence_source_preserved passed!")
+
+    test_existing_ethereum_adapter_still_works()
+    print("test_existing_ethereum_adapter_still_works passed!")
+
+    test_existing_tron_adapter_still_works()
+    print("test_existing_tron_adapter_still_works passed!")
+
+    # Synthetic bridge registry for test purposes.
+    # This is test intelligence - does not represent real bridge data.
+    # (SYNTHETIC_BRIDGE_REGISTRY defined at module level earlier)
+
+
+def detect_cross_chain_links(
+    source_transfers: list,
+    destination_transfers: list,
+    bridge_registry: dict | None = None,
+    max_time_seconds: int = 3600,
+    amount_tolerance: float = 1e6,
+) -> list:
+    """Detect plausible cross-chain bridge links between normalized transfers.
+
+    Examines source and destination transfers and identifies possible
+    bridge relationships based on synthetic bridge registry matching,
+    asset compatibility, time ordering, and amount compatibility.
+
+    Returns a list of CrossChainLink objects. Returns an empty list
+    if no plausible links are found.
+
+    The detector does NOT claim proven bridge relationships - it produces
+    investigative confidence signals with evidence and a confidence score.
+    """
+    from chain_adapter import CrossChainLink, create_cross_chain_link, validate_cross_chain_link
+
+    if bridge_registry is None:
+        bridge_registry = SYNTHETIC_BRIDGE_REGISTRY
+
+    links = []
+
+    # Normalize: index transfers by address for matching
+    # source_transfers: list of dicts with at least 'from_address', 'to_address', 'value', 'timestamp', 'hash', 'asset'
+    # destination_transfers: same format
+
+    for src in source_transfers:
+        src_from = src.get("from_address", "")
+        src_to = src.get("to_address", "")
+        src_value = src.get("value", "0") or src.get("amount", "0") or "0"
+        src_timestamp = src.get("timestamp", src.get("blockID", "0"))
+        src_hash = src.get("hash", src.get("tx_hash", ""))
+        src_asset = src.get("asset", src.get("symbol", ""))
+
+        # Determine source chain from the address
+        src_chain = _guess_chain_from_address(src_from)
+
+        # Look up bridge info in registry for source address
+        bridge_info = None
+        if bridge_registry and src_chain in bridge_registry:
+            addr_registry = bridge_registry[src_chain]
+            if src_from in addr_registry:
+                bridge_info = addr_registry[src_from]
+
+        if bridge_info is None:
+            # No known bridge on source side - skip
+            continue
+
+        bridge_name = bridge_info.get("bridge_name", "")
+        dest_chains = bridge_info.get("destination_chains", [])
+
+        # Must have at least one destination chain configured
+        if not dest_chains:
+            continue
+
+        for dst in destination_transfers:
+            dst_from = dst.get("from_address", "")
+            dst_to = dst.get("to_address", "")
+            dst_value = dst.get("value", "0") or dst.get("amount", "0") or "0"
+            dst_timestamp = dst.get("timestamp", dst.get("blockID", "0"))
+            dst_hash = dst.get("hash", dst.get("tx_hash", ""))
+            dst_asset = dst.get("asset", dst.get("symbol", ""))
+
+            # Determine destination chain
+            dst_chain = _guess_chain_from_address(dst_to)
+
+            # Criterion 1: Different chains
+            if src_chain == dst_chain:
+                continue
+
+            # Criterion 2: Destination chain must be in bridge's supported chains
+            if dst_chain not in dest_chains:
+                continue
+
+            # Criterion 3: Destination must occur after source
+            try:
+                src_ts = int(src_timestamp)
+                dst_ts = int(dst_timestamp)
+            except (ValueError, TypeError):
+                continue
+
+            if dst_ts < src_ts:
+                # Destination before source - reject
+                continue
+
+            # Criterion 4: Time window
+            time_diff = dst_ts - src_ts
+            if time_diff > max_time_seconds:
+                continue
+
+            # Criterion 5: Asset compatibility
+            # ETH -> TRX/USDT, USDT(ERC20) -> USDT(TRC20) when registry supports
+            asset_compatible = _assets_compatible(src_asset, dst_asset, bridge_info)
+
+            if not asset_compatible:
+                continue
+
+            # Criterion 6: Amount compatibility (allow bridge fees)
+            # Use relative percentage tolerance instead of absolute,
+            # since bridge fees are typically a small percentage.
+            try:
+                src_amt = float(src_value)
+                dst_amt = float(dst_value)
+            except (ValueError, TypeError):
+                continue
+
+            if src_amt <= 0 or dst_amt <= 0:
+                # Zero amounts: skip strict tolerance check
+                pass  # amount diff will be considered acceptable
+            else:
+                # Relative percentage difference
+                max_allowed = max(src_amt, dst_amt) * 0.05  # 5% tolerance
+                amount_diff = abs(src_amt - dst_amt)
+                if amount_diff > max_allowed:
+                    continue
+
+            # All criteria passed - create a CrossChainLink
+            link = create_cross_chain_link(
+                source_chain=src_chain,
+                source_address=src_from,
+                source_asset=src_asset,
+                destination_chain=dst_chain,
+                destination_address=dst_to,
+                destination_asset=dst_asset,
+                source_tx_hash=src_hash,
+                destination_tx_hash=dst_hash,
+                bridge_address=src_from if bridge_name else None,
+                bridge_name=bridge_name,
+                confidence=_calculate_confidence(bridge_info, asset_compatible, time_diff, amount_diff, max_time_seconds),
+                evidence=_make_evidence(
+                    bridge_name, src_asset, dst_asset, time_diff, amount_diff, src_chain, dst_chain
+                ),
+                source="synthetic_bridge_registry",
+            )
+
+            # Validate the created link
+            try:
+                validate_cross_chain_link(link)
+                links.append(link)
+            except ValueError:
+                # Should not happen if our validation is consistent, but skip if so
+                continue
+
+    return links
+
+
+def _guess_chain_from_address(address: str) -> str:
+    """Guess the blockchain from an address prefix."""
+    addr = address.strip()
+    if addr.startswith("0x") and len(addr) == 42:
+        return "ethereum"
+    elif addr.startswith("T") and len(addr) == 34:
+        return "tron"
+    else:
+        return "unknown"
+
+
+def _assets_compatible(source_asset: str, dest_asset: str, bridge_info: dict | None) -> bool:
+    """Check if source and destination assets are compatible per bridge info."""
+    if not bridge_info:
+        return False
+
+    src = (source_asset or "").upper()
+    dst = (dest_asset or "").upper()
+
+    # ETH can match ETH-like
+    if src == "ETH" and dst in ("ETH", "TRX"):
+        return True
+
+    # USDT on either side
+    if "USDT" in (src, dst):
+        return True
+
+    # If bridge info specifies supported assets, check those
+    supported = bridge_info.get("supported_assets", [])
+    if supported:
+        return src in supported or dst in supported
+
+    # Default: unknown assets are not compatible
+    return False
+
+
+def _calculate_confidence(
+    bridge_info: dict,
+    asset_compatible: bool,
+    time_diff: int,
+    amount_diff: float,
+    max_time_seconds: int,
+) -> float:
+    """Calculate a conservative confidence score for the bridge link.
+
+    Returns a float between 0.0 and 1.0.
+    """
+    base = 0.0
+
+    # Known bridge on source side
+    bridge_name = bridge_info.get("bridge_name", "")
+    if bridge_name and bridge_name != "Unknown":
+        base += 0.3
+
+    # Asset compatibility
+    if asset_compatible:
+        base += 0.3
+
+    # Reasonable time window (not at the extreme)
+    if time_diff <= max_time_seconds // 2:
+        base += 0.2
+
+    # Amount within tolerance
+    # (if we get here, amount is already within tolerance, so add lightly)
+    base += 0.1
+
+    # Cap at 1.0 and floor at 0.0
+    return max(0.0, min(1.0, base))
+
+
+def _make_evidence(
+    bridge_name: str,
+    src_asset: str,
+    dst_asset: str,
+    time_diff: int,
+    amount_diff: float,
+    src_chain: str,
+    dst_chain: str,
+) -> str:
+    """Generate evidence string explaining why the link was created."""
+    parts = []
+
+    if bridge_name and bridge_name != "Unknown":
+        parts.append(f"Known bridge: {bridge_name}")
+
+    if src_asset and dst_asset:
+        parts.append(f"Asset: {src_asset} → {dst_asset}")
+
+    if src_chain and dst_chain and src_chain != dst_chain:
+        parts.append(f"{src_chain} → {dst_chain}")
+
+    if time_diff >= 0:
+        parts.append(f"Time gap: {time_diff}s")
+
+    if amount_diff > 0:
+        parts.append(f"Amount diff: {amount_diff:.0f} (within tolerance)")
+
+    return ". ".join(parts) if parts else "No specific evidence"
+
+
+# Run all tests when module is executed directly
+if __name__ == "__main__":
+    test_adapter_can_be_created()
+    print("test_adapter_can_be_created passed!")
+
+    test_ethereum_adapter_identifies_as_ethereum()
+    print("test_ethereum_adapter_identifies_as_ethereum passed!")
+
+    test_ethereum_address_validation_works()
+    print("test_ethereum_address_validation_works passed!")
+
+    test_adapter_interface_methods_exist()
+    print("test_adapter_interface_methods_exist passed!")
+
+    test_existing_tests_still_pass()
+    print("test_existing_tests_still_pass passed!")
+
+    # NEW: Cross-chain link tests
+    test_valid_ethereum_to_tron_link()
+    print("test_valid_ethereum_to_tron_link passed!")
+
+    test_invalid_confidence_rejected()
+    print("test_invalid_confidence_rejected passed!")
+
+    test_same_chain_link_rejected()
+    print("test_same_chain_link_rejected passed!")
+
+    test_missing_evidence_rejected()
+    print("test_missing_evidence_rejected passed!")
+
+    test_destination_tx_hash_optional()
+    print("test_destination_tx_hash_optional passed!")
+
+    test_evidence_source_preserved()
+    print("test_evidence_source_preserved passed!")
+
+    test_existing_ethereum_adapter_still_works()
+    print("test_existing_ethereum_adapter_still_works passed!")
+
+    test_existing_tron_adapter_still_works()
+    print("test_existing_tron_adapter_still_works passed!")
+
+    # NEW: Bridge link detector tests
+    test_bridge_ethereum_to_tron_valid_match()
+    print("test_bridge_ethereum_to_tron_valid_match passed!")
+
+    test_bridge_same_chain_rejected()
+    print("test_bridge_same_chain_rejected passed!")
+
+    test_bridge_unknown_bridge_rejected()
+    print("test_bridge_unknown_bridge_rejected passed!")
+
+    test_bridge_asset_mismatch_rejected()
+    print("test_bridge_asset_mismatch_rejected passed!")
+
+    test_bridge_destination_before_source_rejected()
+    print("test_bridge_destination_before_source_rejected passed!")
+
+    test_bridge_time_window_exceeded_rejected()
+    print("test_bridge_time_window_exceeded_rejected passed!")
+
+    test_bridge_amount_outside_tolerance_rejected()
+    print("test_bridge_amount_outside_tolerance_rejected passed!")
+
+    test_bridge_small_fee_accepted()
+    print("test_bridge_small_fee_accepted passed!")
+
+    test_bridge_evidence_preserved()
+    print("test_bridge_evidence_preserved passed!")
+
+    test_bridge_confidence_range()
+    print("test_bridge_confidence_range passed!")
+
+    test_bridge_bridge_name_preserved()
+    print("test_bridge_bridge_name_preserved passed!")
+
+    test_bridge_multiple_transfers_no_crash()
+    print("test_bridge_multiple_transfers_no_crash passed!")
+
+    print("\nAll chain adapter tests passed!")
