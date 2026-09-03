@@ -1829,6 +1829,111 @@ def fetch_address_metadata_from_etherscan(address: str) -> dict:
             "raw_metadata": None,
         }
 
+def combine_attribution_sources(address: str, registry: dict, etherscan_metadata: dict) -> dict:
+    """Combine attribution from local address registry and Etherscan metadata.
+
+    Returns a unified attribution result dict with fields:
+    - address: the normalized address
+    - entity_name: combined entity name
+    - entity_type: combined entity type
+    - source: combined source list
+    - confidence: combined confidence
+    - evidence: string describing the attribution logic applied
+
+    Rules:
+    - If registry has a known entity and Etherscan is Unknown → preserve registry attribution
+    - If registry is Unknown and Etherscan has a clearly mapped entity type → use Etherscan attribution
+    - If both sources identify the same entity type → combine evidence and increase confidence
+      conservatively (not exceeding 1.0, do not invent confidence)
+    - If sources disagree on entity type → preserve disagreement in evidence, choose registry as primary
+    - Preserve both sources in a 'sources' field
+    """
+    # Parse registry attribution
+    registry_attr = attribute_address(address, registry)
+
+    # Parse Etherscan metadata attribution
+    etherscan_attr = {
+        "address": etherscan_metadata.get("address", address),
+        "entity_name": etherscan_metadata.get("entity_name", "Unknown"),
+        "entity_type": etherscan_metadata.get("entity_type", "Unknown"),
+        "source": etherscan_metadata.get("source", "Etherscan Metadata"),
+        "confidence": etherscan_metadata.get("confidence", 0.0),
+        "evidence": etherscan_metadata.get("evidence", ""),
+    }
+
+    # Rule 1: If registry has known entity and Etherscan is Unknown → preserve registry
+    if registry_attr.get("entity_type") != "Unknown" and etherscan_attr.get("entity_type") == "Unknown":
+        registry_attr["sources"] = [registry_attr.get("source", "unknown"), "Etherscan Metadata"]
+        registry_attr["combined_evidence"] = (
+            f"{registry_attr['evidence']}. No Etherscan metadata available; registry attribution preserved."
+        )
+        registry_attr["confidence"] = min(1.0, registry_attr.get("confidence", 0.0) + 0.1)
+        return registry_attr
+
+    # Rule 2: If registry is Unknown and Etherscan has mapped entity type → use Etherscan
+    if registry_attr.get("entity_type") == "Unknown" and etherscan_attr.get("entity_type") != "Unknown":
+        result = dict(etherscan_attr)
+        result["sources"] = ["Etherscan Metadata", registry_attr.get("source", "unknown")]
+        result["combined_evidence"] = (
+            f"{etherscan_attr['evidence']}. No registry match; Etherscan attribution applied."
+        )
+        result["confidence"] = min(1.0, etherscan_attr.get("confidence", 0.0) + 0.1)
+        return result
+
+    # Rule 3: Both sources identify the same entity type → combine conservatively
+    if registry_attr.get("entity_type") == etherscan_attr.get("entity_type") and registry_attr.get("entity_type") != "Unknown":
+        combined_type = registry_attr.get("entity_type")
+        # Combine evidence from both sources
+        combined_evidence = (
+            f"{registry_attr['evidence']}; {etherscan_attr['evidence']}"
+        )
+        # Increase confidence conservatively: take the higher, add 0.1, cap at 1.0
+        reg_conf = registry_attr.get("confidence", 0.0)
+        esc_conf = etherscan_attr.get("confidence", 0.0)
+        combined_conf = min(1.0, max(reg_conf, esc_conf) + 0.1)
+        # Build result with both sources
+        result = {
+            "address": address,
+            "entity_name": etherscan_attr.get("entity_name", registry_attr.get("entity_name", "Unknown")),
+            "entity_type": combined_type,
+            "source": ["Etherscan Metadata", registry_attr.get("source", "unknown")],
+            "confidence": combined_conf,
+            "evidence": combined_evidence,
+            "sources": ["Etherscan Metadata", registry_attr.get("source", "unknown")],
+        }
+        # Preserve combined_evidence as well
+        result["combined_evidence"] = combined_evidence
+        return result
+
+    # Rule 4: Sources disagree on entity type → preserve registry as primary, record disagreement
+    if registry_attr.get("entity_type") != etherscan_attr.get("entity_type"):
+        # Choose registry as primary, but record Etherscan info
+        result = dict(registry_attr)
+        result["sources"] = [registry_attr.get("source", "unknown"), "Etherscan Metadata"]
+        result["evidence"] = (
+            f"{registry_attr['evidence']}. Etherscan metadata: {etherscan_attr.get('entity_type', 'Unknown')} entity type. "
+            f"Disagreement resolved to registry attribution."
+        )
+        # Slightly increase confidence for having multiple sources
+        result["confidence"] = min(1.0, registry_attr.get("confidence", 0.0) + 0.1)
+        result["combined_evidence"] = (
+            f"{registry_attr['evidence']}; Etherscan metadata disagreed: {etherscan_attr.get('evidence', '')}"
+        )
+        return result
+
+    # Rule 5: Both unknown → return Unknown
+    result = {
+        "address": address,
+        "entity_name": "Unknown",
+        "entity_type": "Unknown",
+        "source": ["Etherscan Metadata", registry_attr.get("source", "unknown")],
+        "confidence": 0.0,
+        "evidence": "No attribution found in registry or Etherscan metadata.",
+        "sources": ["Etherscan Metadata", registry_attr.get("source", "unknown")],
+    }
+    return result
+
+
 def test_internal_transactions() -> None:
     """Test the --internal CLI flow using a mocked Etherscan API response.
 
@@ -2446,6 +2551,294 @@ def test_fetch_address_metadata_label_parsing() -> None:
     print("test_fetch_address_metadata_label_parsing passed!")
 
 
+def test_combine_attribution_sources_registry_only() -> None:
+    """Test combined attribution when only registry has a known entity."""
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    # Registry has KnownVASP, Etherscan is Unknown
+    from eth_txs import fetch_address_metadata_from_etherscan, combine_attribution_sources
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    mock_metadata = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "nametag": "",
+            "flags": {},
+            "labels": [],
+            "page": 1,
+            "maxpage": 1,
+            "count": 0,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        etherscan_meta = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    result = combine_attribution_sources("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", registry, etherscan_meta)
+
+    # Registry should be preserved since Etherscan is Unknown
+    assert result["entity_type"] == "VASP", f"Expected VASP, got {result['entity_type']}"
+    assert result["entity_name"] == "KnownVASP", f"Expected KnownVASP, got {result['entity_name']}"
+    assert "sources" in result, "Expected 'sources' field"
+    assert "Etherscan Metadata" in result["sources"]
+    assert "KnownVASP" in result["evidence"]
+    assert result["confidence"] > 0.0
+
+    del os.environ["ETHERSCAN_API_KEY"]
+    print("test_combine_attribution_sources_registry_only passed!")
+
+
+def test_combine_attribution_sources_etherscan_only() -> None:
+    """Test combined attribution when only Etherscan has a mapped entity."""
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    # Registry is Unknown, Etherscan has VASP label
+    from eth_txs import fetch_address_metadata_from_etherscan, combine_attribution_sources
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    mock_metadata = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "nametag": "Binance",
+            "flags": {},
+            "labels": [{"name": "binance", "type": "exchange", "type_name": "VAASP"}],
+            "page": 1,
+            "maxpage": 1,
+            "count": 1,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        etherscan_meta = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    result = combine_attribution_sources("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", registry, etherscan_meta)
+
+    # Etherscan should be used since registry is Unknown
+    assert result["entity_type"] == "VASP", f"Expected VASP, got {result['entity_type']}"
+    assert result["entity_name"] == "Binance", f"Expected Binance, got {result['entity_name']}"
+    assert "sources" in result, "Expected 'sources' field"
+    assert "Etherscan Metadata" in result["sources"]
+    assert "Binance" in result["evidence"]
+
+    del os.environ["ETHERSCAN_API_KEY"]
+    print("test_combine_attribution_sources_etherscan_only passed!")
+
+
+def test_combine_attribution_sources_agree() -> None:
+    """Test combined attribution when both sources identify the same entity."""
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    # Both registry and Etherscan identify VASP
+    from eth_txs import fetch_address_metadata_from_etherscan, combine_attribution_sources
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    mock_metadata = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "nametag": "Coinbase",
+            "flags": {},
+            "labels": [{"name": "coinbase", "type": "exchange", "type_name": "VAASP"}],
+            "page": 1,
+            "maxpage": 1,
+            "count": 1,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        etherscan_meta = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    result = combine_attribution_sources("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", registry, etherscan_meta)
+
+    # Both identify VASP → combined with increased confidence
+    assert result["entity_type"] == "VASP", f"Expected VASP, got {result['entity_type']}"
+    assert "sources" in result, "Expected 'sources' field"
+    assert isinstance(result.get("confidence"), float), f"Expected float confidence, got {type(result.get('confidence'))}"
+    assert result["confidence"] <= 1.0, f"Confidence should not exceed 1.0, got {result['confidence']}"
+    # Confidence should be increased from individual values (capped at 1.0)
+    assert "Evidence" in result.get("combined_evidence", "") or len(result.get("combined_evidence", "")) > 0
+    # The combined evidence should contain both source evidences
+    assert "registry" in result["combined_evidence"].lower()
+    assert "Etherscan" in result["combined_evidence"]
+
+    del os.environ["ETHERSCAN_API_KEY"]
+    print("test_combine_attribution_sources_agree passed!")
+
+
+def test_combine_attribution_sources_conflict() -> None:
+    """Test combined attribution when sources disagree on entity type."""
+    import json
+    from pathlib import Path
+    import unittest.mock as mock
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+# Registry says VASP, Etherscan says Mixer → conflict case
+    mock_metadata = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "nametag": "Tornado cash",
+            "flags": {},
+            "labels": [{"name": "tornado cash", "type": "mixer", "type_name": "Mixer"}],
+            "page": 1,
+            "maxpage": 1,
+            "count": 1,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        etherscan_meta = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    result = combine_attribution_sources("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", registry, etherscan_meta)
+
+    # Sources disagree → registry primary, record disagreement
+    assert result["entity_type"] == "VASP", f"Expected VASP (registry primary), got {result['entity_type']}"
+    assert "sources" in result, "Expected 'sources' field"
+    assert len(result["sources"]) == 2, f"Expected 2 sources, got {len(result['sources'])}"
+    # Evidence should mention the disagreement and resolution
+    assert "disagree" in result["evidence"].lower() or "conflict" in result["evidence"].lower()
+    assert "Mixer" in result["evidence"]
+
+    del os.environ["ETHERSCAN_API_KEY"]
+    print("test_combine_attribution_sources_conflict passed!")
+
+
+def test_combine_attribution_sources_both_unknown() -> None:
+    """Test combined attribution when both sources are Unknown."""
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    # Both registry and Etherscan are Unknown - use address NOT in registry
+    from eth_txs import fetch_address_metadata_from_etherscan, combine_attribution_sources
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    mock_metadata = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "nametag": "",
+            "flags": {},
+            "labels": [],
+            "page": 1,
+            "maxpage": 1,
+            "count": 0,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        etherscan_meta = fetch_address_metadata_from_etherscan(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        )
+
+    result = combine_attribution_sources("0xzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", registry, etherscan_meta)
+
+    # Both Unknown → result should be Unknown
+    assert result["entity_type"] == "Unknown", f"Expected Unknown, got {result['entity_type']}"
+    assert result["entity_name"] == "Unknown", f"Expected Unknown, got {result['entity_name']}"
+    assert result["confidence"] == 0.0, f"Expected 0.0 confidence, got {result['confidence']}"
+    assert "sources" in result, "Expected 'sources' field"
+    assert "No attribution" in result["evidence"]
+
+    del os.environ["ETHERSCAN_API_KEY"]
+    print("test_combine_attribution_sources_both_unknown passed!")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         test_graph()
@@ -2473,6 +2866,11 @@ if __name__ == "__main__":
         test_fetch_address_metadata_error()
         test_fetch_address_metadata_confidence_name_only()
         test_fetch_address_metadata_label_parsing()
+        test_combine_attribution_sources_registry_only()
+        test_combine_attribution_sources_etherscan_only()
+        test_combine_attribution_sources_agree()
+        test_combine_attribution_sources_conflict()
+        test_combine_attribution_sources_both_unknown()
     else:
         main()
 
