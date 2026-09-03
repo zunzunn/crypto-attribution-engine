@@ -1,20 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Sliders, Play, AlertCircle, RefreshCw, Zap, Layers, GitBranch, ArrowRightLeft, ShieldAlert } from 'lucide-react';
+import { Search, Play, RefreshCw, Zap, Layers, GitBranch, Box, LayoutGrid } from 'lucide-react';
 import CytoscapeGraph from './CytoscapeGraph';
+import ForceGraph3DComponent from './ForceGraph3D';
 import AddressDrawer from './AddressDrawer';
 import { fetchAddressTrace } from '../services/api';
-import { shortenAddress, getRiskBadgeStyle } from '../utils/formatters';
+import { shortenAddress } from '../utils/formatters';
 
 export default function TraceView({ targetAddress: initialAddress, onAddressChange }) {
   const [targetAddress, setTargetAddress] = useState(initialAddress || '0x71C7656EC7ab88b098defB751B7401B5f6d8976F');
   const [maxHops, setMaxHops] = useState(3);
   const [useEtherscan, setUseEtherscan] = useState(false);
+  const [viewMode, setViewMode] = useState('3D'); // '3D' or '2D'
   const [loading, setLoading] = useState(false);
   const [traceData, setTraceData] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Auto-run trace whenever targetAddress changes
   useEffect(() => {
     if (initialAddress) {
       setTargetAddress(initialAddress);
@@ -32,7 +33,6 @@ export default function TraceView({ targetAddress: initialAddress, onAddressChan
       const res = await fetchAddressTrace(addr, hops, etherscanFlag);
       if (res.data) {
         setTraceData(res.data);
-        // Select target node by default if available
         const discovered = res.data.trace_results?.discovered_addresses || [];
         const targetNode = discovered.find(n => n.address.toLowerCase() === addr.toLowerCase()) || discovered[0];
         setSelectedNode(targetNode || null);
@@ -59,7 +59,7 @@ export default function TraceView({ targetAddress: initialAddress, onAddressChan
       {/* Control Bar Panel */}
       <form onSubmit={handleRunTrace} className="glass-panel p-4 rounded-xl border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
         
-        {/* Address Input */}
+        {/* Target Address Input */}
         <div className="flex-1 w-full relative">
           <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Target Ethereum Wallet</label>
           <div className="relative">
@@ -74,8 +74,8 @@ export default function TraceView({ targetAddress: initialAddress, onAddressChan
           </div>
         </div>
 
-        {/* Max Hops Selector */}
-        <div className="w-full md:w-44">
+        {/* Max Hops Slider */}
+        <div className="w-full md:w-40">
           <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400 mb-1">
             <span>Trace Depth:</span>
             <span className="text-cyan-400 font-mono">{maxHops} Hops</span>
@@ -88,6 +88,34 @@ export default function TraceView({ targetAddress: initialAddress, onAddressChan
             onChange={(e) => setMaxHops(parseInt(e.target.value))}
             className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
           />
+        </div>
+
+        {/* 2D / 3D Mode Toggle Switch */}
+        <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+          <button
+            type="button"
+            onClick={() => setViewMode('3D')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition ${
+              viewMode === '3D'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-950/50'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Box className="w-3.5 h-3.5" />
+            3D WebGL
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('2D')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition ${
+              viewMode === '2D'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-950/50'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            2D Dagre
+          </button>
         </div>
 
         {/* Action Button */}
@@ -149,16 +177,24 @@ export default function TraceView({ targetAddress: initialAddress, onAddressChan
         </div>
       )}
 
-      {/* Main Investigation Workspace Grid */}
+      {/* Main Workspace Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[620px]">
         
-        {/* Cytoscape Canvas (Spans 2 columns) */}
+        {/* Canvas (Spans 2 columns) */}
         <div className="lg:col-span-2 h-full">
-          <CytoscapeGraph
-            traceData={traceData}
-            selectedNode={selectedNode}
-            onSelectNode={(nodeInfo) => setSelectedNode(nodeInfo)}
-          />
+          {viewMode === '3D' ? (
+            <ForceGraph3DComponent
+              traceData={traceData}
+              selectedNode={selectedNode}
+              onSelectNode={(nodeInfo) => setSelectedNode(nodeInfo)}
+            />
+          ) : (
+            <CytoscapeGraph
+              traceData={traceData}
+              selectedNode={selectedNode}
+              onSelectNode={(nodeInfo) => setSelectedNode(nodeInfo)}
+            />
+          )}
         </div>
 
         {/* Address Intelligence Drawer (Spans 1 column) */}
