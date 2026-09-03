@@ -354,6 +354,118 @@ def calculate_risk_score(entity_type: str, hops: int) -> (int, str):
     return score, level
 
 
+def calculate_evidence_risk(entity_type: str, hops: int) -> (int, str, str):
+    """Calculate risk score, level, and evidence based on entity type and hop distance.
+
+    Returns (score, level, evidence) where evidence is a descriptive string
+    explaining the calculation: entity type, base points, hop penalty, and final score.
+    """
+    base = RISK_BASE_POINTS.get(entity_type, 0)
+    distance_penalty = hops * 5
+    score = max(0, min(100, base - distance_penalty))
+
+    if score < 25:
+        level = "Low"
+    elif score < 50:
+        level = "Medium"
+    elif score < 75:
+        level = "High"
+    else:
+        level = "Critical"
+
+    evidence = (
+        f"entity_type={entity_type}, base_points={base}, "
+        f"hops={hops}, penalty={distance_penalty}, final_score={score}"
+    )
+
+    return score, level, evidence
+
+
+def test_calculate_evidence_risk_unknown() -> None:
+    """Test calculate_evidence_risk with entity_type Unknown."""
+    score, level, evidence = calculate_evidence_risk("Unknown", 0)
+    assert score == 0, f"Expected score 0, got {score}"
+    assert level == "Low", f"Expected level Low, got {level}"
+    assert "entity_type=Unknown" in evidence
+    print("test_calculate_evidence_risk_unknown passed!")
+
+
+def test_calculate_evidence_risk_vasp_low_confidence() -> None:
+    """Test calculate_evidence_risk with VASP at hops=2 (low confidence)."""
+    score, level, evidence = calculate_evidence_risk("VASP", 2)
+    assert score == 0, f"Expected score 0, got {score}"
+    assert level == "Low", f"Expected level Low, got {level}"
+    assert "penalty=10" in evidence
+    print("test_calculate_evidence_risk_vasp_low_confidence passed!")
+
+
+def test_calculate_evidence_risk_vasp_full_confidence() -> None:
+    """Test calculate_evidence_risk with VASP at hops=0 (full confidence)."""
+    score, level, evidence = calculate_evidence_risk("VASP", 0)
+    assert score == 10, f"Expected score 10, got {score}"
+    assert level == "Low", f"Expected level Low, got {level}"
+    assert "base_points=10" in evidence
+    print("test_calculate_evidence_risk_vasp_full_confidence passed!")
+
+
+def test_calculate_evidence_risk_bridge() -> None:
+    """Test calculate_evidence_risk with entity_type Bridge."""
+    score, level, evidence = calculate_evidence_risk("Bridge", 0)
+    assert score == 20, f"Expected score 20, got {score}"
+    assert level == "Low", f"Expected level Low, got {level}"
+    assert "base_points=20" in evidence
+    print("test_calculate_evidence_risk_bridge passed!")
+
+
+def test_calculate_evidence_risk_mixer() -> None:
+    """Test calculate_evidence_risk with entity_type Mixer."""
+    score, level, evidence = calculate_evidence_risk("Mixer", 0)
+    assert score == 40, f"Expected score 40, got {score}"
+    assert level == "Medium", f"Expected level Medium, got {level}"
+    assert "base_points=40" in evidence
+    print("test_calculate_evidence_risk_mixer passed!")
+
+
+def test_calculate_evidence_risk_scam_fraud() -> None:
+    """Test calculate_evidence_risk with entity_type Scam/Fraud."""
+    score, level, evidence = calculate_evidence_risk("Scam/Fraud", 0)
+    assert score == 50, f"Expected score 50, got {score}"
+    assert level == "High", f"Expected level High, got {level}"
+    assert "base_points=50" in evidence
+    print("test_calculate_evidence_risk_scam_fraud passed!")
+
+
+def test_calculate_evidence_risk_hop_distance_penalty() -> None:
+    """Test calculate_evidence_risk hop-distance penalty effect."""
+    # VASP base=10, at hops=1 penalty=5 -> score=5 (Low)
+    score, level, evidence = calculate_evidence_risk("VASP", 1)
+    assert score == 5, f"Expected score 5, got {score}"
+    assert level == "Low", f"Expected level Low, got {level}"
+
+    # VASP base=10, at hops=3 penalty=15 -> score=0 (minimums)
+    score, level, evidence = calculate_evidence_risk("VASP", 3)
+    assert score == 0, f"Expected score 0, got {score}"
+    assert "penalty=15" in evidence
+    print("test_calculate_evidence_risk_hop_distance_penalty passed!")
+
+
+def test_calculate_evidence_risk_evidence_based_scoring() -> None:
+    """Test calculate_evidence_risk evidence string format and content."""
+    # Test Scam/Fraud at hop 1: base=50, penalty=5, score=45
+    score, level, evidence = calculate_evidence_risk("Scam/Fraud", 1)
+    assert "entity_type=Scam/Fraud" in evidence
+    assert "base_points=50" in evidence
+    assert "penalty=5" in evidence
+    assert "final_score=45" in evidence
+    assert level == "Medium", f"Expected level Medium, got {level}"
+
+    # Test Bridge at hop 4: base=20, penalty=20, score=0
+    score, level, evidence = calculate_evidence_risk("Bridge", 4)
+    assert "final_score=0" in evidence
+    assert score == 0
+    print("test_calculate_evidence_risk_evidence_based_scoring passed!")
+
+
 def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
     """Breadth-first traversal of the transaction graph.
 
@@ -1079,6 +1191,13 @@ def test_risk_scoring() -> None:
     assert vasp_h2_level == "Low"
 
     print("All risk scoring tests passed!")
+# New tests for calculate_evidence_risk evidence-based scoring
+test_calculate_evidence_risk_unknown()
+test_calculate_evidence_risk_vasp_low_confidence()
+test_calculate_evidence_risk_vasp_full_confidence()
+test_calculate_evidence_risk_bridge()
+test_calculate_evidence_risk_mixer()
+test_calculate_evidence_risk_scam_fraud()
 # New tests for address registry architecture
 
 def test_address_registry() -> None:
