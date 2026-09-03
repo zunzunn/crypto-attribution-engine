@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, AlertOctagon, Users, Database, ArrowUpRight, TrendingUp, Filter } from 'lucide-react';
+import { Shield, AlertOctagon, Users, Database, ArrowUpRight, TrendingUp, Radio } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { getDashboardMetrics } from '../services/api';
 import { shortenAddress, getRiskBadgeStyle } from '../utils/formatters';
@@ -10,67 +10,76 @@ export default function DashboardView({ onSelectCase }) {
   return (
     <div className="space-y-6">
       
-      {/* Top Banner */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 bg-gradient-to-r from-slate-900 via-slate-900/90 to-cyan-950/40 relative overflow-hidden">
+      {/* Top Cybernetic Banner with Animated Radar Scanner */}
+      <div className="glass-panel p-6 rounded-2xl border border-cyan-500/20 relative overflow-hidden bg-gradient-to-r from-slate-900/80 via-slate-900/60 to-cyan-950/30">
+        
+        {/* Radar Scanner Visual Effect */}
+        <div className="absolute -right-16 -top-16 w-80 h-80 rounded-full border border-cyan-500/10 pointer-events-none flex items-center justify-center">
+          <div className="w-56 h-56 rounded-full border border-cyan-500/15 flex items-center justify-center">
+            <div className="w-32 h-32 rounded-full border border-cyan-500/20" />
+          </div>
+          <div className="absolute inset-0 radar-beam bg-gradient-to-tr from-transparent via-cyan-500/10 to-transparent rounded-full" />
+        </div>
+
         <div className="relative z-10 max-w-2xl">
-          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase tracking-wider">
-            SAHYOG Integration Support
-          </span>
-          <h2 className="text-2xl font-extrabold text-white mt-3 tracking-tight">
-            Cybercrime Cryptocurrency Attribution & Tracing
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 uppercase tracking-wider flex items-center gap-1.5 shadow-sm shadow-cyan-950">
+              <Radio className="w-3 h-3 animate-pulse text-cyan-400" />
+              Realtime Forensics Grid Active
+            </span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-3 tracking-tight">
+            Cybercrime Cryptocurrency Attribution Engine
           </h2>
           <p className="text-sm text-slate-300 mt-2 leading-relaxed">
-            Automated transaction graph collection, multi-hop BFS tracing, entity attribution, and evidence-based risk scoring for law enforcement investigators.
+            Automated multi-hop BFS tracing, entity attribution, and evidence-based risk scoring with 3D cyberspace network visualization.
           </p>
-        </div>
-        <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-10 pointer-events-none">
-          <Shield className="w-64 h-64 text-cyan-400" />
         </div>
       </div>
 
-      {/* Metrics Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 3D Perspective Tilt Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 perspective-container">
         
-        <div className="glass-panel p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+        <div className="glass-panel tilt-card p-5 rounded-xl border border-slate-800/80 flex items-center justify-between cursor-default">
           <div>
-            <span className="text-xs text-slate-400">Total Cases</span>
-            <h4 className="text-2xl font-bold text-white mt-1">{metrics.total_investigations}</h4>
-            <span className="text-[11px] text-cyan-400 mt-1 inline-block">Active: {metrics.active_investigations}</span>
+            <span className="text-xs text-slate-400 font-medium">Total Investigations</span>
+            <h4 className="text-3xl font-extrabold text-white mt-1">{metrics.total_investigations}</h4>
+            <span className="text-[11px] text-cyan-400 font-mono mt-1 inline-block">Active: {metrics.active_investigations}</span>
           </div>
-          <div className="p-3 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+          <div className="p-3.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-lg shadow-cyan-950/40">
             <Shield className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+        <div className="glass-panel tilt-card p-5 rounded-xl border border-slate-800/80 flex items-center justify-between cursor-default">
           <div>
-            <span className="text-xs text-slate-400">High Risk Wallets</span>
-            <h4 className="text-2xl font-bold text-red-400 mt-1">{metrics.high_risk_wallets}</h4>
-            <span className="text-[11px] text-red-400/80 mt-1 inline-block">Priority Action Needed</span>
+            <span className="text-xs text-slate-400 font-medium">High Risk Wallets</span>
+            <h4 className="text-3xl font-extrabold text-red-400 mt-1">{metrics.high_risk_wallets}</h4>
+            <span className="text-[11px] text-red-400/80 font-mono mt-1 inline-block">Priority Action Needed</span>
           </div>
-          <div className="p-3 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20">
+          <div className="p-3.5 rounded-xl bg-red-500/10 text-red-400 border border-red-500/30 shadow-lg shadow-red-950/40">
             <AlertOctagon className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+        <div className="glass-panel tilt-card p-5 rounded-xl border border-slate-800/80 flex items-center justify-between cursor-default">
           <div>
-            <span className="text-xs text-slate-400">Attributed Entities</span>
-            <h4 className="text-2xl font-bold text-blue-400 mt-1">{metrics.known_entities_count}</h4>
-            <span className="text-[11px] text-blue-400/80 mt-1 inline-block">Local + Etherscan Tags</span>
+            <span className="text-xs text-slate-400 font-medium">Attributed Entities</span>
+            <h4 className="text-3xl font-extrabold text-blue-400 mt-1">{metrics.known_entities_count}</h4>
+            <span className="text-[11px] text-blue-400/80 font-mono mt-1 inline-block">Local + Etherscan Tags</span>
           </div>
-          <div className="p-3 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+          <div className="p-3.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/30 shadow-lg shadow-blue-950/40">
             <Database className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-4 rounded-xl border border-slate-800 flex items-center justify-between">
+        <div className="glass-panel tilt-card p-5 rounded-xl border border-slate-800/80 flex items-center justify-between cursor-default">
           <div>
-            <span className="text-xs text-slate-400">Obfuscation Patterns</span>
-            <h4 className="text-2xl font-bold text-amber-400 mt-1">4 Active</h4>
-            <span className="text-[11px] text-amber-400/80 mt-1 inline-block">Splitting, Hopping, Layering</span>
+            <span className="text-xs text-slate-400 font-medium">Obfuscation Patterns</span>
+            <h4 className="text-3xl font-extrabold text-amber-400 mt-1">4 Active</h4>
+            <span className="text-[11px] text-amber-400/80 font-mono mt-1 inline-block">Splitting, Hopping, Layering</span>
           </div>
-          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <div className="p-3.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/30 shadow-lg shadow-amber-950/40">
             <TrendingUp className="w-6 h-6" />
           </div>
         </div>
@@ -81,11 +90,11 @@ export default function DashboardView({ onSelectCase }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Risk Distribution Donut Chart */}
-        <div className="glass-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between">
+        <div className="glass-panel p-5 rounded-xl border border-slate-800/80 flex flex-col justify-between">
           <div className="flex justify-between items-center mb-4">
             <div>
               <h3 className="text-base font-bold text-white">Investigative Risk Breakdown</h3>
-              <p className="text-xs text-slate-400">Risk classification across active traced targets</p>
+              <p className="text-xs text-slate-400">Classification across active suspects</p>
             </div>
             <span className="text-xs font-mono text-cyan-400">N = {metrics.total_investigations}</span>
           </div>
@@ -116,7 +125,7 @@ export default function DashboardView({ onSelectCase }) {
         </div>
 
         {/* Asset Type Breakdown Bar Chart */}
-        <div className="glass-panel p-5 rounded-xl border border-slate-800 flex flex-col justify-between">
+        <div className="glass-panel p-5 rounded-xl border border-slate-800/80 flex flex-col justify-between">
           <div className="flex justify-between items-center mb-4">
             <div>
               <h3 className="text-base font-bold text-white">Traced Volume by Asset Type</h3>
@@ -145,11 +154,11 @@ export default function DashboardView({ onSelectCase }) {
       </div>
 
       {/* Recent Case Investigations Table */}
-      <div className="glass-panel rounded-xl border border-slate-800 p-5">
+      <div className="glass-panel rounded-xl border border-slate-800/80 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-bold text-white">Recent Case Investigations</h3>
-            <p className="text-xs text-slate-400">Select a case to inspect full trace graph & risk evidence</p>
+            <p className="text-xs text-slate-400">Select a case to inspect full 3D interactive trace & risk evidence</p>
           </div>
         </div>
 
@@ -168,7 +177,7 @@ export default function DashboardView({ onSelectCase }) {
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
               {metrics.recent_investigations.map((item) => (
-                <tr key={item.id} className="hover:bg-slate-900/50 transition">
+                <tr key={item.id} className="hover:bg-slate-900/60 transition">
                   <td className="px-4 py-3 font-bold text-cyan-400">{item.id}</td>
                   <td className="px-4 py-3 text-slate-200">{shortenAddress(item.address, 10, 6)}</td>
                   <td className="px-4 py-3 font-sans text-slate-300">{item.entity}</td>
@@ -182,9 +191,9 @@ export default function DashboardView({ onSelectCase }) {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => onSelectCase(item.address)}
-                      className="inline-flex items-center gap-1 px-3 py-1 text-xs font-sans font-medium rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 transition"
+                      className="inline-flex items-center gap-1 px-3 py-1 text-xs font-sans font-medium rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 transition shadow-sm"
                     >
-                      Investigate <ArrowUpRight className="w-3 h-3" />
+                      3D Trace <ArrowUpRight className="w-3 h-3" />
                     </button>
                   </td>
                 </tr>

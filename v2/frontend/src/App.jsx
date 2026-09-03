@@ -4,6 +4,7 @@ import DashboardView from './components/DashboardView';
 import TraceView from './components/TraceView';
 import EntitiesView from './components/EntitiesView';
 import ReportView from './components/ReportView';
+import CyberBackground3D from './components/CyberBackground3D';
 import { checkApiHealth } from './services/api';
 
 export default function App() {
@@ -31,9 +32,12 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="relative min-h-screen text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden">
       
-      {/* Top Navbar */}
+      {/* Realtime 3D Interactive WebGL Cyberspace Background Canvas */}
+      <CyberBackground3D />
+
+      {/* Top Navbar Header */}
       <Navbar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
@@ -41,8 +45,8 @@ export default function App() {
         onQuickSearch={handleQuickSearch}
       />
 
-      {/* Main Content Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+      {/* Main Forensic Content Area */}
+      <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
         {currentTab === 'dashboard' && (
           <DashboardView onSelectCase={handleSelectCase} />
         )}
@@ -64,10 +68,10 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="glass-panel border-t border-slate-900 py-4 px-6 mt-12 text-xs text-slate-500">
+      <footer className="relative z-10 glass-panel border-t border-slate-800/80 py-4 px-6 mt-12 text-xs text-slate-400">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>Crypto Attribution Engine v2.0 &bull; Blockchain Cybercrime Forensic Framework</span>
-          <span className="font-mono text-[11px] text-slate-600">SAHYOG Portal Integration Support</span>
+          <span>Crypto Attribution Engine v2.0 &bull; 3D Cyberspace Forensics Framework</span>
+          <span className="font-mono text-[11px] text-cyan-400">SAHYOG Portal Integration Support</span>
         </div>
       </footer>
 
