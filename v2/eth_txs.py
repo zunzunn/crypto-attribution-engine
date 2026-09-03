@@ -222,6 +222,8 @@ def lookup_address(address: str, registry: dict) -> dict | None:
 
     Returns the entity dict if found, None otherwise.
     Case-insensitive matching on the hex portion after 0x prefix.
+    The returned entity dict includes: address, entity_name, entity_type,
+    source, and confidence.
     """
     addr = address.strip()
     if not is_valid_eth_address(addr):
@@ -229,7 +231,87 @@ def lookup_address(address: str, registry: dict) -> dict | None:
     # Normalize: lowercase the hex portion after 0x
     hex_part = addr[2:].lower()
     normalized_addr = "0x" + hex_part
-    return registry.get(normalized_addr)
+    entry = registry.get(normalized_addr)
+    if entry is not None:
+        # Ensure entry has all required fields with defaults
+        entry.setdefault("address", normalized_addr)
+        entry.setdefault("entity_name", "Unknown")
+        entry.setdefault("entity_type", "Unknown")
+        entry.setdefault("source", "unknown")
+        entry.setdefault("confidence", 0.0)
+    return entry
+
+
+def lookup_address(address: str, registry: dict) -> dict | None:
+    """Look up an address in the registry.
+
+    Returns the entity dict if found, None otherwise.
+    Case-insensitive matching on the hex portion after 0x prefix.
+    The returned entity dict includes: address, entity_name, entity_type,
+    source, and confidence.
+    """
+    addr = address.strip()
+    if not is_valid_eth_address(addr):
+        return None
+    # Normalize: lowercase the hex portion after 0x
+    hex_part = addr[2:].lower()
+    normalized_addr = "0x" + hex_part
+    entry = registry.get(normalized_addr)
+    if entry is not None:
+        # Ensure entry has all required fields with defaults
+        entry.setdefault("address", normalized_addr)
+        entry.setdefault("entity_name", "Unknown")
+        entry.setdefault("entity_type", "Unknown")
+        entry.setdefault("source", "unknown")
+        entry.setdefault("confidence", 0.0)
+    return entry
+
+
+def attribute_address(address: str, registry: dict) -> dict:
+    """Provide attribution evidence for an address based on the registry.
+
+    Returns a structured result containing attribution evidence:
+    - address: the normalized address
+    - entity_name: entity name from registry or "Unknown"
+    - entity_type: entity type from registry or "Unknown"
+    - source: source from registry or "unknown"
+    - confidence: confidence from registry or 0.0
+    - evidence: string explaining the match status
+
+    For a known address in the registry, evidence confirms the registry match.
+    For an unknown address, evidence indicates no registry match was found.
+    All evidence explicitly states this is synthetic test data.
+    """
+    entry = lookup_address(address, registry)
+    if entry is not None and entry.get("entity_type") != "Unknown":
+        evidence = (
+            f"Address {entry['address']} matched entity '{entry['entity_name']}' "
+            f"of type {entry['entity_type']} from registry source '{entry['source']}' "
+            f"with confidence {entry['confidence']}. "
+            f"This is synthetic test data; the registry does not represent real intelligence."
+        )
+        return {
+            "address": entry.get("address", address),
+            "entity_name": entry.get("entity_name", "Unknown"),
+            "entity_type": entry.get("entity_type", "Unknown"),
+            "source": entry.get("source", "unknown"),
+            "confidence": float(entry.get("confidence", 0.0)),
+            "evidence": evidence,
+        }
+    else:
+        # Unknown address - no registry match
+        return {
+            "address": address.strip() if address else "0x00000000000000000000000000000000",
+            "entity_name": "Unknown",
+            "entity_type": "Unknown",
+            "source": "unknown",
+            "confidence": 0.0,
+            "evidence": (
+                f"Address {address.strip() if address else '0x00000000000000000000000000000000'} "
+                f"not found in intelligence registry. No match. "
+                f"This is synthetic test data; no real intelligence claims are made."
+            ),
+        }
 
 
 def classify_entity(address: str, registry: dict | None = None) -> str:
@@ -878,6 +960,78 @@ def test_address_registry() -> None:
 
     print("All address registry tests passed!")
 
+# New tests for attribute_address evidence-based attribution
+def test_attribute_address() -> None:
+    """Tests for the attribute_address evidence-based attribution function.
+
+    Tests known VASP, Bridge, Mixer, unknown address,
+    confidence preservation, source preservation, and evidence generation.
+
+    All registry entries are synthetic test data;
+    they do not represent real companies or real blockchain addresses.
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    # Known VASP attribution
+    vasp_addr = "0x" + "a" * 40
+    result = attribute_address(vasp_addr, registry)
+    assert result["entity_name"] == "KnownVASP", f"Expected KnownVASP, got {result['entity_name']}"
+    assert result["entity_type"] == "VASP", f"Expected VASP, got {result['entity_type']}"
+    assert result["source"] == "synthetic_test_registry", f"Expected synthetic_test_registry, got {result['source']}"
+    assert result["confidence"] == 1.0, f"Expected 1.0, got {result['confidence']}"
+    assert "matched entity" in result["evidence"], f"Expected evidence about match, got: {result['evidence']}"
+    assert "synthetic test data" in result["evidence"], f"Evidence should mention synthetic test data"
+
+    # Known Bridge attribution
+    bridge_addr = "0x" + "b" * 40
+    result = attribute_address(bridge_addr, registry)
+    assert result["entity_name"] == "KnownBridge", f"Expected KnownBridge, got {result['entity_name']}"
+    assert result["entity_type"] == "Bridge", f"Expected Bridge, got {result['entity_type']}"
+    assert result["confidence"] == 1.0
+
+    # Known Mixer attribution
+    mixer_addr = "0x" + "c" * 40
+    result = attribute_address(mixer_addr, registry)
+    assert result["entity_name"] == "KnownMixer", f"Expected KnownMixer, got {result['entity_name']}"
+    assert result["entity_type"] == "Mixer", f"Expected Mixer, got {result['entity_type']}"
+    assert result["confidence"] == 1.0
+
+    # Unknown address attribution
+    unknown_addr = "0x" + "z" * 40
+    result = attribute_address(unknown_addr, registry)
+    assert result["entity_name"] == "Unknown", f"Expected Unknown, got {result['entity_name']}"
+    assert result["entity_type"] == "Unknown", f"Expected Unknown, got {result['entity_type']}"
+    assert result["confidence"] == 0.0, f"Expected 0.0, got {result['confidence']}"
+    assert "not found" in result["evidence"].lower() or "no match" in result["evidence"].lower(),         f"Evidence should indicate no match: {result['evidence']}"
+
+    # Case-insensitive uppercase address
+    addr_upper = "0x" + "A" * 40
+    result = attribute_address(addr_upper, registry)
+    assert result["entity_name"] == "KnownVASP", f"Expected KnownVASP for uppercase, got {result['entity_name']}"
+    assert result["entity_type"] == "VASP"
+
+    # Address with 0x prefix variant
+    addr_no_prefix = "0x" + "a" * 40  # should still work with prefix
+    result = attribute_address(addr_no_prefix, registry)
+    assert result["entity_name"] == "KnownVASP", f"Expected KnownVASP, got {result['entity_name']}"
+
+    # Verify classify_entity still works backward compatible (no registry arg)
+    # This test address is NOT in registry, so should return Unknown
+    result_no_reg = classify_entity("0x" + "z" * 40)
+    assert result_no_reg == "Unknown", f"Expected Unknown without registry, got {result_no_reg}"
+
+    # Verify classify_entity works with registry
+    result_with_reg = classify_entity("0x" + "a" * 40, registry)
+    assert result_with_reg == "VASP", f"Expected VASP with registry, got {result_with_reg}"
+
+    print("All attribute_address tests passed!")
+
+
 
 
 def test_etherscan_v2_endpoint() -> None:
@@ -1367,6 +1521,7 @@ if __name__ == "__main__":
         test_bfs()
         test_risk_scoring()
         test_address_registry()
+        test_attribute_address()
         test_address_cli_with_mock()
         test_etherscan_error_handling()
         test_etherscan_v2_endpoint()
