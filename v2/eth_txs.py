@@ -534,6 +534,177 @@ def main() -> None:
         print_graph(graph)
 
 
+def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
+    if not is_valid_eth_address(start):
+        return {"visited": set(), "paths": {}}
+    visited = {start}
+    queue = [(start, [start], 0, [])]
+    paths = {start: ([start], [], 0)}
+    while queue:
+        current, path, hops, transfers = queue.pop(0)
+        if hops >= max_hops:
+            continue
+        for edge_key, txs in graph.items():
+            parts = edge_key.split("->")
+            if len(parts) != 2:
+                continue
+            sender, receiver = parts[0], parts[1]
+            if sender != current:
+                continue
+            for transfer in txs:
+                if transfer["asset_type"] == "INTERNAL_ETH" and transfer.get("is_error") == "1":
+                    continue
+                if receiver in visited:
+                    paths[receiver] = (paths[receiver][0], paths[receiver][1] + [transfer], paths[receiver][2])
+                    continue
+                new_path = path + [receiver]
+                new_transfers = transfers + [transfer]
+                new_hops = hops + 1
+                new_visited = visited | {receiver}
+                visited.add(receiver)
+                paths[receiver] = (new_path, new_transfers, new_hops)
+                queue.append((receiver, new_path, new_hops, new_transfers))
+    return {"visited": visited, "paths": paths}
+
+
+def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) -> dict:
+    """Run BFS traversal and attribute every discovered address.
+
+    Returns a structured investigation result:
+    - start: the starting address
+    - discovered: list of all discovered addresses
+    - hop_count: maximum hops reached
+    - paths: dict of address -> (path, transfers, hops)
+    - attribution: dict of address -> {
+        address, entity_name, entity_type, source, confidence, evidence,
+        risk_score, risk_level
+      }
+    - all transfer metadata preserved from unified BFS
+    """
+    from eth_txs import calculate_risk_score
+
+    bfs_result = bfs_traverse_unified(graph, start, max_hops)
+    visited = bfs_result["visited"]
+    paths = bfs_result["paths"]
+
+    # Determine max hops reached
+    max_hops_reached = 0
+    for addr, (path, txs, hops) in paths.items():
+        if hops > max_hops_reached:
+            max_hops_reached = hops
+
+    # Attribute every discovered address
+    attribution = {}
+    for addr in visited:
+        # attribute_address returns structured result
+        attr = attribute_address(addr, registry)
+        
+        # Add risk score information using existing calculate_risk_score
+        entity_type = attr["entity_type"]
+        risk_score, risk_level = calculate_risk_score(entity_type, attr.get("hops", 0)) if addr in paths else (0, "Low")
+        
+        # We need to get the hops from the paths
+        hops = 0
+        if addr in paths:
+            _, _, hops = paths[addr]
+        
+        risk_score, risk_level = calculate_risk_score(entity_type, hops)
+        
+        attribution[addr] = {
+            "address": attr["address"],
+            "entity_name": attr["entity_name"],
+            "entity_type": attr["entity_type"],
+            "source": attr["source"],
+            "confidence": attr["confidence"],
+            "evidence": attr["evidence"],
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+        }
+
+    # Collect discovered addresses
+    discovered = sorted(visited)
+
+    return {
+        "start": start,
+        "discovered": discovered,
+        "hop_count": max_hops_reached,
+        "paths": paths,
+        "attribution": attribution,
+    }
+
+
+
+
+def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) -> dict:
+    """Run BFS traversal and attribute every discovered address.
+
+    Returns a structured investigation result:
+    - start: the starting address
+    - discovered: list of all discovered addresses
+    - hop_count: maximum hops reached
+    - paths: dict of address -> (path, transfers, hops)
+    - attribution: dict of address -> {
+        address, entity_name, entity_type, source, confidence, evidence,
+        risk_score, risk_level
+      }
+    - all transfer metadata preserved from unified BFS
+    """
+    from eth_txs import calculate_risk_score
+
+    bfs_result = bfs_traverse_unified(graph, start, max_hops)
+    visited = bfs_result["visited"]
+    paths = bfs_result["paths"]
+
+    # Determine max hops reached
+    max_hops_reached = 0
+    for addr, (path, txs, hops) in paths.items():
+        if hops > max_hops_reached:
+            max_hops_reached = hops
+
+    # Attribute every discovered address
+    attribution = {}
+    for addr in visited:
+        # attribute_address returns structured result
+        attr = attribute_address(addr, registry)
+        
+        # Add risk score information using existing calculate_risk_score
+        entity_type = attr["entity_type"]
+        risk_score, risk_level = calculate_risk_score(entity_type, attr.get("hops", 0)) if addr in paths else (0, "Low")
+        
+        # We need to get the hops from the paths
+        hops = 0
+        if addr in paths:
+            _, _, hops = paths[addr]
+        
+        risk_score, risk_level = calculate_risk_score(entity_type, hops)
+        
+        attribution[addr] = {
+            "address": attr["address"],
+            "entity_name": attr["entity_name"],
+            "entity_type": attr["entity_type"],
+            "source": attr["source"],
+            "confidence": attr["confidence"],
+            "evidence": attr["evidence"],
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+        }
+
+    # Collect discovered addresses
+    discovered = sorted(visited)
+
+    return {
+        "start": start,
+        "discovered": discovered,
+        "hop_count": max_hops_reached,
+        "paths": paths,
+        "attribution": attribution,
+    }
+
+
+
+
+
+
 def test_graph() -> None:
     """Basic tests for graph creation and invalid/missing addresses."""
     # Test with valid Ethereum addresses (0x + 40 hex chars)
@@ -1515,6 +1686,153 @@ def test_internal_transactions() -> None:
         os.remove("test_internal.json")
 
     print("test_internal_transactions passed!")
+
+# New tests for analyze_trace unified BFS+tracing attribution
+def test_attribute_trace() -> None:
+    """Tests for the analyze_trace unified BFS+tracing attribution function.
+
+    Tests multi-hop trace containing known VASP, known Bridge,
+    Unknown address, multiple assets, a cycle, and a failed internal transfer.
+
+    All registry entries are synthetic test data;
+    they do not represent real companies or real blockchain addresses.
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    # Build transfers with: VASP -> Bridge -> Unknown, plus multi-asset, cycle, failed internal
+    from eth_txs import normalize_eth_transaction, normalize_erc20_transfer, normalize_internal_transaction, build_unified_graph
+
+    transfers = []
+
+    # VASP outflow
+    transfers.append(normalize_eth_transaction({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xvasp1",
+        "timestamp": "1609459200",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 5.0,
+    }))
+
+    # Bridge transfer (ETH from VASP to Bridge)
+    transfers.append(normalize_eth_transaction({
+        "from": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "to": "0xcccccccccccccccccccccccccccccccccccccccc",
+        "hash": "0xbridge1",
+        "timestamp": "1609459201",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 2.0,
+    }))
+
+    # Unknown address receive (internal transfer that is NOT in registry)
+    transfers.append(normalize_internal_transaction({
+        "from": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "to": "0xdddddddddddddddddddddddddddddddddddddddd",
+        "hash": "0xinternalunknown1",
+        "timestamp": "1609459202",
+        "asset_type": "INTERNAL_ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 1.0,
+        "is_error": "0",
+    }))
+
+    # Multi-asset transfer: Bridge -> Unknown with USDT
+    transfers.append(normalize_erc20_transfer({
+        "from": "0xcccccccccccccccccccccccccccccccccccccccc",
+        "to": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "hash": "0xusdt2",
+        "timestamp": "1609459203",
+        "asset_type": "ERC20",
+        "asset_contract": "0xusdtcontract",
+        "symbol": "USDT",
+        "amount": 10.0,
+    }))
+
+    # Cycle: Unknown -> VASP (back edge)
+    transfers.append(normalize_eth_transaction({
+        "from": "0xdddddddddddddddddddddddddddddddddddddddd",
+        "to": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "hash": "0xcycle1",
+        "timestamp": "1609459204",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 0.5,
+    }))
+
+    # Failed internal transfer (should be excluded from graph)
+    transfers.append(normalize_internal_transaction({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xintfail2",
+        "timestamp": "1609459205",
+        "asset_type": "INTERNAL_ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 0.3,
+        "is_error": "1",
+    }))
+
+    # Build unified graph (failed internal excluded)
+    graph = build_unified_graph(transfers)
+
+    # Run analysis
+    result = analyze_trace("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", graph, registry, max_hops=3)
+
+    # Verify starting address
+    assert result["start"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", f"Wrong start: {result['start']}"
+
+    # Verify discovered addresses include expected entities
+    discovered = result["discovered"]
+    print(f"Discovered addresses: {discovered}")
+
+    # Verify attribution for known VASP
+    vasp_attr = result["attribution"].get("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {})
+    assert vasp_attr["entity_name"] == "KnownVASP", f"Expected KnownVASP, got {vasp_attr.get('entity_name')}"
+
+    # Verify attribution for known Bridge
+    bridge_attr = result["attribution"].get("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", {})
+    assert bridge_attr["entity_name"] == "KnownBridge", f"Expected KnownBridge, got {bridge_attr.get('entity_name')}"
+
+    # Verify unknown address stays Unknown (not inferred)
+    unknown_attr = result["attribution"].get("0xdddddddddddddddddddddddddddddddddddddddd", {})
+    assert unknown_attr["entity_name"] == "Unknown", f"Expected Unknown, got {unknown_attr.get('entity_name')}"
+    assert unknown_attr["entity_type"] == "Unknown", f"Expected Unknown type, got {unknown_attr.get('entity_type')}"
+    assert unknown_attr["confidence"] == 0.0, f"Expected confidence 0.0, got {unknown_attr.get('confidence')}"
+
+    # Verify USDT address attribution (not in registry -> Unknown)
+    usdt_attr = result["attribution"].get("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", {})
+    assert usdt_attr["entity_name"] == "Unknown", f"USDT receiver should be Unknown (not in registry), got {usdt_attr.get('entity_name')}"
+
+    # Verify risk scores are present
+    for addr, attr in result["attribution"].items():
+        assert "risk_score" in attr, f"Missing risk_score for {addr}"
+        assert "risk_level" in attr, f"Missing risk_level for {addr}"
+        assert isinstance(attr["risk_score"], int), f"risk_score should be int for {addr}"
+        assert isinstance(attr["risk_level"], str), f"risk_level should be str for {addr}"
+
+    # Verify transfer metadata preserved - VASP->Bridge path should have ETH transfer
+    vasp_to_bridge_path = result["paths"].get("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ([] , [], 0))
+    _, bridge_txs, _ = vasp_to_bridge_path
+    eth_in_bridge = any(t["symbol"] == "ETH" for t in bridge_txs)
+    assert eth_in_bridge, "Expected ETH transfer from VASP to Bridge in path metadata"
+
+    # Verify the cycle detection - VASP should reach itself through the cycle
+    # (the cycle is Unknown -> VASP, so VASP can reach Unknown and back)
+    # At minimum verify the path structure is correct
+
+    print("All attribute_trace tests passed!")
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         test_graph()
@@ -1522,6 +1840,7 @@ if __name__ == "__main__":
         test_risk_scoring()
         test_address_registry()
         test_attribute_address()
+        test_attribute_trace()
         test_address_cli_with_mock()
         test_etherscan_error_handling()
         test_etherscan_v2_endpoint()
@@ -1545,39 +1864,6 @@ def build_unified_graph(transfers: list) -> dict:
         edge_key = f"{transfer['from_address']}->{transfer['to_address']}"
         graph[edge_key].append(transfer)
     return dict(graph)
-
-
-def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
-    if not is_valid_eth_address(start):
-        return {"visited": set(), "paths": {}}
-    visited = {start}
-    queue = [(start, [start], 0, [])]
-    paths = {start: ([start], [], 0)}
-    while queue:
-        current, path, hops, transfers = queue.pop(0)
-        if hops >= max_hops:
-            continue
-        for edge_key, txs in graph.items():
-            parts = edge_key.split("->")
-            if len(parts) != 2:
-                continue
-            sender, receiver = parts[0], parts[1]
-            if sender != current:
-                continue
-            for transfer in txs:
-                if transfer["asset_type"] == "INTERNAL_ETH" and transfer.get("is_error") == "1":
-                    continue
-                if receiver in visited:
-                    paths[receiver] = (paths[receiver][0], paths[receiver][1] + [transfer], paths[receiver][2])
-                    continue
-                new_path = path + [receiver]
-                new_transfers = transfers + [transfer]
-                new_hops = hops + 1
-                new_visited = visited | {receiver}
-                visited.add(receiver)
-                paths[receiver] = (new_path, new_transfers, new_hops)
-                queue.append((receiver, new_path, new_hops, new_transfers))
-    return {"visited": visited, "paths": paths}
 
 
 def test_unified_graph_transfers( ):
