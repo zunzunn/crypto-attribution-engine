@@ -453,6 +453,10 @@ def main() -> None:
         help="Fetch Ethereum internal transactions from Etherscan API V2 and save to internal_transactions.json",
     )
     parser.add_argument(
+        "--metadata",
+        help="Fetch address metadata from Etherscan V2 profile endpoint and display entity info",
+    )
+    parser.add_argument(
         "--start",
         help="Starting Ethereum address for BFS traversal",
     )
@@ -487,6 +491,16 @@ def main() -> None:
 
     if args.internal:
         fetch_internal_transactions(args.internal, "internal_transactions.json")
+
+    if args.metadata:
+        from eth_txs import fetch_address_metadata_from_etherscan
+        metadata = fetch_address_metadata_from_etherscan(args.metadata)
+        print(f"Address: {metadata['address']}")
+        print(f"Entity Name: {metadata['entity_name']}")
+        print(f"Entity Type: {metadata['entity_type']}")
+        print(f"Source: {metadata['source']}")
+        print(f"Confidence: {metadata['confidence']}")
+        print(f"Evidence: {metadata['evidence']}")
 
     if args.start:
         if not is_valid_eth_address(args.start):
@@ -1602,6 +1616,215 @@ def test_normalize_transactions() -> None:
 
 
 
+
+def fetch_address_metadata_from_etherscan(address: str) -> dict:
+    """Fetch address metadata from Etherscan API V2 profile endpoint.
+
+    Calls the account.profile endpoint with chainid=1 and the ETHERSCAN_API_KEY
+    from the environment. Returns parsed metadata structured into our attribution
+    format without modifying any synthetic registry.
+
+    Returns a dict with fields:
+    - address: the normalized address
+    - entity_name: human-readable entity name from Etherscan nametags
+    - entity_type: mapped entity type (VASP/Bridge/Mixer/Scam/Fraud/Unknown)
+    - source: "Etherscan Metadata"
+    - confidence: 1.0 for strong labels, 0.5 for name-only, 0.0 for none
+    - evidence: string describing nametags/labels found and mapping applied
+    - raw_metadata: the raw Etherscan result for reference
+
+    Entity type mapping is conservative:
+    - Labels clearly indicating VASP (e.g., "binance", "coinbase", "kraken")
+      -> entity_type "VASP", entity_name from label
+    - Labels clearly indicating Bridge (e.g., "bridge", "liquidity pool")
+      -> entity_type "Bridge", entity_name from label
+    - Labels clearly indicating Mixer (e.g., "tornado cash", "mixer")
+      -> entity_type "Mixer", entity_name from label
+    - Labels indicating Scam/Fraud (e.g., "scam", "fraud", "phishing")
+      -> entity_type "Scam/Fraud", entity_name from label
+    - All other labels/nametags -> entity_type "Unknown"
+    - If no labels are present, entity_type "Unknown" and entity_name "Unknown"
+    - confidence 1.0 when labels provide entity_type, 0.5 when only name tag,
+      0.0 when nothing recognisable
+    - evidence explicitly lists the nametags/labels found and the mapping
+    - source always "Etherscan Metadata"; never invents real-world attribution
+
+    Does not make real API calls during tests (mocked in test suite).
+    Never hardcodes or prints the API key.
+    """
+    import json
+    import os
+    from pathlib import Path
+
+    api_key = os.getenv("ETHERSCAN_API_KEY")
+    if not api_key:
+        print("Error: ETHERSCAN_API_KEY not set in environment.", file=sys.stderr)
+        sys.exit(1)
+
+    if not is_valid_eth_address(address):
+        print(f"Invalid Ethereum address: {address}", file=sys.stderr)
+        sys.exit(1)
+
+    base_url = "https://api.etherscan.io/v2/api"
+    params = {
+        "module": "account",
+        "action": "profile",
+        "address": address,
+        "chainid": "1",
+        "apikey": api_key,
+    }
+
+    import requests
+    try:
+        response = requests.get(base_url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("status") != "1":
+            return {
+                "address": address,
+                "entity_name": "Unknown",
+                "entity_type": "Unknown",
+                "source": "Etherscan Metadata",
+                "confidence": 0.0,
+                "evidence": f"Etherscan API returned status {data.get("status")}: {data.get("result", "no result")}",
+                "raw_metadata": data,
+            }
+
+        result_data = data.get("result", {})
+        if not result_data:
+            return {
+                "address": address,
+                "entity_name": "Unknown",
+                "entity_type": "Unknown",
+                "source": "Etherscan Metadata",
+                "confidence": 0.0,
+                "evidence": "No profile data returned from Etherscan",
+                "raw_metadata": data,
+            }
+
+        # Parse labels and nametags from Etherscan profile
+        labels = result_data.get("labels", [])
+        name_tags = result_data.get("name", "")
+
+        # Build entity_type and entity_name from labels conservatively
+        entity_type = "Unknown"
+        entity_name = "Unknown"
+        label_descriptions = []
+
+        # Known VASP label mappings (lowercase)
+        vasp_labels = {"binance", "coinbase", "kraken", "gemini", "ftx", "blockfi", "crypto-com", "paymium"}
+        # Known Bridge label mappings (lowercase)
+        bridge_labels = {"bridge", "liquidity pool", "token bridge", "portemonnaie", "celer", "corda", "interledger"}
+        # Known Mixer label mappings (lowercase)
+        mixer_labels = {"tornado cash", "mixer", "coinjoin", "joinmarket", "wasabi", "samourai"}
+        # Known Scam/Fraud label mappings (lowercase)
+        scam_labels = {"scam", "fraud", "phishing", "blacklist", "malicious", "dust", "honey pot"}
+
+        for label in labels:
+            label_name = label.get("name", "").lower()
+            label_type = label.get("type", "").lower()
+            label_type_name = label.get("type_name", "").lower()
+
+            # Check all available label info
+            all_label_text = f"{label_name} {label_type} {label_type_name}".lower()
+
+            # Check for Scam/Fraud first (most specific)
+            if any(s in all_label_text for s in scam_labels):
+                entity_type = "Scam/Fraud"
+                entity_name = label_name.capitalize() if label_name and label_name != "unknown" else "Unknown"
+                label_descriptions.append(f"Scam/Fraud label: {label.get("name", "N/A")}")
+
+            # Check for Mixer
+            elif any(m in all_label_text for m in mixer_labels):
+                if entity_type == "Unknown":
+                    entity_type = "Mixer"
+                    entity_name = label_name.capitalize() if label_name and label_name != "unknown" else "Unknown"
+                    label_descriptions.append(f"Mixer label: {label.get("name", "N/A")}")
+
+            # Check for Bridge
+            elif any(b in all_label_text for b in bridge_labels):
+                if entity_type == "Unknown":
+                    entity_type = "Bridge"
+                    entity_name = label_name.capitalize() if label_name and label_name != "unknown" else "Unknown"
+                    label_descriptions.append(f"Bridge label: {label.get("name", "N/A")}")
+
+            # Check for VASP
+            elif any(v in all_label_text for v in vasp_labels):
+                if entity_type == "Unknown":
+                    entity_type = "VASP"
+                    entity_name = label_name.capitalize() if label_name and label_name != "unknown" else "Unknown"
+                    label_descriptions.append(f"VASP label: {label.get("name", "N/A")}")
+
+            else:
+                # Unknown label - keep entity_type as Unknown but record the label name
+                if entity_type == "Unknown":
+                    entity_name = label_name.capitalize() if label_name and label_name != "unknown" else "Unknown"
+                label_descriptions.append(f"Label: {label.get("name", "N/A")}")
+
+        # Also check the overall name tag if present and entity_type still Unknown
+        if name_tags and entity_type == "Unknown":
+            name_lower = str(name_tags).lower()
+            if any(v in name_lower for v in vasp_labels):
+                entity_type = "VASP"
+                entity_name = str(name_tags).capitalize()
+            elif any(m in name_lower for m in mixer_labels):
+                entity_type = "Mixer"
+                entity_name = str(name_tags)
+            elif any(b in name_lower for b in bridge_labels):
+                entity_type = "Bridge"
+                entity_name = str(name_tags)
+            elif any(s in name_lower for s in scam_labels):
+                entity_type = "Scam/Fraud"
+                entity_name = str(name_tags)
+            else:
+                # Name tag present but no category matched; keep entity_type Unknown
+                # but record the name tag for evidence and confidence
+                entity_name = str(name_tags)
+
+        # Determine confidence
+        has_name_tag = entity_name != "Unknown"
+        if entity_type != "Unknown" and label_descriptions:
+            confidence = 1.0
+        elif entity_type != "Unknown" and not label_descriptions and not has_name_tag:
+            confidence = 0.5  # entity type from label-like name but no descriptive labels
+        elif has_name_tag and not label_descriptions:
+            confidence = 0.5  # name tag only, no specific labels
+        else:
+            confidence = 0.0
+
+        # Build evidence string
+        evidence_parts = []
+        if label_descriptions:
+            evidence_parts.append("Etherscan nametags/labels: " + "; ".join(label_descriptions))
+        if entity_type != "Unknown":
+            evidence_parts.append(f"mapped entity_type={entity_type}")
+        if entity_name != "Unknown":
+            evidence_parts.append(f"entity_name={entity_name}")
+
+        evidence = ". ".join(evidence_parts) if evidence_parts else "No recognisable Etherscan nametags found"
+
+        return {
+            "address": address,
+            "entity_name": entity_name,
+            "entity_type": entity_type,
+            "source": "Etherscan Metadata",
+            "confidence": confidence,
+            "evidence": evidence,
+            "raw_metadata": data,
+        }
+
+    except requests.exceptions.RequestException as exc:
+        return {
+            "address": address,
+            "entity_name": "Unknown",
+            "entity_type": "Unknown",
+            "source": "Etherscan Metadata",
+            "confidence": 0.0,
+            "evidence": f"Error fetching Etherscan metadata: {exc}",
+            "raw_metadata": None,
+        }
+
 def test_internal_transactions() -> None:
     """Test the --internal CLI flow using a mocked Etherscan API response.
 
@@ -1833,6 +2056,392 @@ def test_attribute_trace() -> None:
 
     print("All attribute_trace tests passed!")
 
+# New tests for fetch_address_metadata_from_etherscan
+def test_fetch_address_metadata_basic() -> None:
+    """Test basic metadata fetch with mocked API response with no labels."""
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response with no labels/name
+    mock_metadata_data = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "profile": "",
+            "flags": {},
+            "labels": [],
+            "page": 1,
+            "maxpage": 1,
+            "count": 0,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata_data
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        result = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    # Verify Unknown entity type with 0.0 confidence when no labels found
+    assert result["address"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert result["entity_name"] == "Unknown", f"Expected Unknown, got {result['entity_name']}"
+    assert result["entity_type"] == "Unknown", f"Expected Unknown, got {result['entity_type']}"
+    assert result["source"] == "Etherscan Metadata"
+    assert result["confidence"] == 0.0, f"Expected 0.0, got {result['confidence']}"
+    assert "No recognisable Etherscan nametags found" in result["evidence"]
+    assert result["raw_metadata"] is not None
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    print("test_fetch_address_metadata_basic passed!")
+
+
+def test_fetch_address_metadata_vasp_label() -> None:
+    """Test metadata fetch with VASP label mapping."""
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response with VASP label (binance)
+    mock_metadata_data = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "profile": "",
+            "flags": {},
+            "labels": [{"name": "binance", "type": "exchange", "type_name": "VAASP"}],
+            "page": 1,
+            "maxpage": 1,
+            "count": 1,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata_data
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        result = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    # Verify VASP entity type mapped from label
+    assert result["entity_type"] == "VASP", f"Expected VASP, got {result['entity_type']}"
+    assert result["entity_name"] == "Binance", f"Expected Binance, got {result['entity_name']}"
+    assert result["confidence"] == 1.0, f"Expected 1.0, got {result['confidence']}"
+    assert "VASP label" in result["evidence"]
+    assert result["source"] == "Etherscan Metadata"
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    print("test_fetch_address_metadata_vasp_label passed!")
+
+
+def test_fetch_address_metadata_bridge_label() -> None:
+    """Test metadata fetch with Bridge label mapping."""
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response with Bridge label
+    mock_metadata_data = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "profile": "",
+            "flags": {},
+            "labels": [{"name": "bridge", "type": "bridge", "type_name": "Bridge"}],
+            "page": 1,
+            "maxpage": 1,
+            "count": 1,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata_data
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        result = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    # Verify Bridge entity type mapped from label
+    assert result["entity_type"] == "Bridge", f"Expected Bridge, got {result['entity_type']}"
+    assert result["entity_name"] == "Bridge", f"Expected Bridge, got {result['entity_name']}"
+    assert result["confidence"] == 1.0, f"Expected 1.0, got {result['confidence']}"
+    assert "Bridge label" in result["evidence"]
+    assert result["source"] == "Etherscan Metadata"
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    print("test_fetch_address_metadata_bridge_label passed!")
+
+
+def test_fetch_address_metadata_mixer_label() -> None:
+    """Test metadata fetch with Mixer label mapping."""
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response with Mixer label
+    mock_metadata_data = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "profile": "",
+            "flags": {},
+            "labels": [{"name": "tornado cash", "type": "mixer", "type_name": "Mixer"}],
+            "page": 1,
+            "maxpage": 1,
+            "count": 1,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata_data
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        result = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    # Verify Mixer entity type mapped from label
+    assert result["entity_type"] == "Mixer", f"Expected Mixer, got {result['entity_type']}"
+    assert result["entity_name"] == "Tornado cash", f"Expected Tornado cash, got {result['entity_name']}"
+    assert result["confidence"] == 1.0, f"Expected 1.0, got {result['confidence']}"
+    assert "Mixer label" in result["evidence"]
+    assert result["source"] == "Etherscan Metadata"
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    print("test_fetch_address_metadata_mixer_label passed!")
+
+
+def test_fetch_address_metadata_scam_label() -> None:
+    """Test metadata fetch with Scam/Fraud label mapping."""
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response with Scam label
+    mock_metadata_data = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "profile": "",
+            "flags": {},
+            "labels": [{"name": "scam", "type": "warning", "type_name": "Scam"}],
+            "page": 1,
+            "maxpage": 1,
+            "count": 1,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata_data
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        result = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    # Verify Scam/Fraud entity type mapped from label
+    assert result["entity_type"] == "Scam/Fraud", f"Expected Scam/Fraud, got {result['entity_type']}"
+    assert result["entity_name"] == "Scam", f"Expected Scam, got {result['entity_name']}"
+    assert result["confidence"] == 1.0, f"Expected 1.0, got {result['confidence']}"
+    assert "Scam/Fraud label" in result["evidence"]
+    assert result["source"] == "Etherscan Metadata"
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    print("test_fetch_address_metadata_scam_label passed!")
+
+
+def test_fetch_address_metadata_error() -> None:
+    """Test metadata fetch with API error response."""
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API error response
+    mock_error_data = {
+        "status": "0",
+        "message": "Invalid API Key",
+        "result": "Invalid API Key (#err2)",
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_error_data
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        result = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    # Verify error handling returns Unknown with 0.0 confidence
+    assert result["entity_type"] == "Unknown", f"Expected Unknown, got {result['entity_type']}"
+    assert result["entity_name"] == "Unknown", f"Expected Unknown, got {result['entity_name']}"
+    assert result["confidence"] == 0.0, f"Expected 0.0, got {result['confidence']}"
+    assert result["source"] == "Etherscan Metadata"
+    assert "Etherscan API returned status 0" in result["evidence"]
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    print("test_fetch_address_metadata_error passed!")
+
+
+def test_fetch_address_metadata_confidence_name_only() -> None:
+    """Test confidence = 0.5 when only name tag, no specific labels."""
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response with name but no labels
+    mock_metadata_data = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "name": "MyCryptoWallet",
+            "flags": {},
+            "labels": [],
+            "page": 1,
+            "maxpage": 1,
+            "count": 0,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata_data
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        result = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    # Verify confidence = 0.5 for name tag only
+    assert result["entity_type"] == "Unknown", f"Expected Unknown, got {result['entity_type']}"
+    assert result["entity_name"] == "MyCryptoWallet", f"Expected MyCryptoWallet, got {result['entity_name']}"
+    assert result["confidence"] == 0.5, f"Expected 0.5, got {result['confidence']}"
+    assert result["source"] == "Etherscan Metadata"
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    print("test_fetch_address_metadata_confidence_name_only passed!")
+
+
+def test_fetch_address_metadata_label_parsing() -> None:
+    """Test label parsing with multiple labels of different types."""
+    import unittest.mock as mock
+    import os
+
+    os.environ["ETHERSCAN_API_KEY"] = "testkey"
+
+    # Mock Etherscan API response with multiple labels
+    mock_metadata_data = {
+        "status": "1",
+        "message": "OK",
+        "result": {
+            "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "balance": "1000000000000000000",
+            "is_mfa": "0",
+            "comment": "",
+            "profile": "",
+            "flags": {},
+            "labels": [
+                {"name": "unknown_label", "type": "other", "type_name": "Unknown"},
+                {"name": "binance", "type": "exchange", "type_name": "VAASP"},
+            ],
+            "page": 1,
+            "maxpage": 1,
+            "count": 2,
+        },
+    }
+
+    with mock.patch("eth_txs.requests.get") as mock_get:
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_metadata_data
+        mock_get.return_value = mock_response
+
+        from eth_txs import fetch_address_metadata_from_etherscan
+        result = fetch_address_metadata_from_etherscan(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+
+    # Verify VASP takes precedence when both VASP and unknown labels present
+    assert result["entity_type"] == "VASP", f"Expected VASP, got {result['entity_type']}"
+    assert result["confidence"] == 1.0, f"Expected 1.0, got {result['confidence']}"
+    # Should include both labels in evidence
+    assert "VASP label" in result["evidence"]
+    assert "Label" in result["evidence"]
+
+    # Reset env var
+    del os.environ["ETHERSCAN_API_KEY"]
+
+    print("test_fetch_address_metadata_label_parsing passed!")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         test_graph()
@@ -1852,6 +2461,14 @@ if __name__ == "__main__":
         test_erc20_token_transfers()
         test_internal_transactions()
         test_normalize_transactions()
+        test_fetch_address_metadata_basic()
+        test_fetch_address_metadata_vasp_label()
+        test_fetch_address_metadata_bridge_label()
+        test_fetch_address_metadata_mixer_label()
+        test_fetch_address_metadata_scam_label()
+        test_fetch_address_metadata_error()
+        test_fetch_address_metadata_confidence_name_only()
+        test_fetch_address_metadata_label_parsing()
     else:
         main()
 
