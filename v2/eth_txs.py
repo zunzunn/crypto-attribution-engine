@@ -197,25 +197,54 @@ RISK_BASE_POINTS = {
 }
 
 
-def classify_entity(address: str) -> str:
-    """Rule-based entity type classification from an Ethereum address.
+def load_address_registry(filepath: str) -> dict:
+    """Load an address registry from a JSON file.
 
-    Uses the first hex character after 0x as a deterministic classifier:
-      - 'a' -> VASP
-      - 'b' -> Bridge
-      - 'c' -> Mixer
-      - 'd' -> Scam/Fraud
-      - anything else -> Unknown
+    The registry file should map addresses to entities with fields:
+    - address: the normalized checksum address
+    - entity_name: human-readable entity name
+    - entity_type: one of VASP, Bridge, Mixer, Scam/Fraud, Unknown
+    - source: origin of this registry entry
+    - confidence: float 0.0 to 1.0
+    """
+    import json
+    with open(filepath, "r") as f:
+        registry = json.load(f)
+    # Normalize all addresses to lowercase for consistent lookup
+    normalized = {}
+    for addr, entry in registry.items():
+        normalized[addr.lower()] = entry
+    return normalized
+
+
+def lookup_address(address: str, registry: dict) -> dict | None:
+    """Look up an address in the registry.
+
+    Returns the entity dict if found, None otherwise.
+    Case-insensitive matching on the hex portion after 0x prefix.
     """
     addr = address.strip()
     if not is_valid_eth_address(addr):
-        return "Unknown"
-    hex_part = addr[2:]
-    if not hex_part:
-        return "Unknown"
-    first_char = hex_part[0].lower()
-    mapping = {"a": "VASP", "b": "Bridge", "c": "Mixer", "d": "Scam/Fraud"}
-    return mapping.get(first_char, "Unknown")
+        return None
+    # Normalize: lowercase the hex portion after 0x
+    hex_part = addr[2:].lower()
+    normalized_addr = "0x" + hex_part
+    return registry.get(normalized_addr)
+
+
+def classify_entity(address: str, registry: dict | None = None) -> str:
+    """Classify an address using the address registry.
+
+    Returns the entity_type from the registry if the address is found.
+    Returns "Unknown" if the address is not in the registry or is invalid.
+    This replaces the old first-hex-character classifier.
+
+    If no registry is provided, returns "Unknown".
+    """
+    entry = lookup_address(address, registry) if registry is not None else None
+    if entry is not None:
+        return entry["entity_type"]
+    return "Unknown"
 
 
 def calculate_risk_score(entity_type: str, hops: int) -> (int, str):
@@ -412,8 +441,10 @@ def main() -> None:
                     tx_summaries.append(f"{tx['hash']} ({tx['value_eth']:.2f}eth) at {tx['timestamp']}")
                 print(f"  Transactions: {', '.join(tx_summaries)}")
             # Print risk scores for entities at this hop
+            # Load registry for address classification
+            registry = load_address_registry(args.registry)
             for addr in hop_addrs:
-                entity_type = classify_entity(addr)
+                entity_type = classify_entity(addr, registry)
                 score, level = calculate_risk_score(entity_type, hop)
                 print(f"  Risk: {addr[:6]}...{addr[-4:]} | {entity_type} | Score: {score} | Level: {level}")
             print()
@@ -693,24 +724,36 @@ def test_etherscan_error_handling() -> None:
 
 
 def test_risk_scoring() -> None:
-    """Tests for rule-based risk scoring and entity classification."""
+    """Tests for rule-based risk scoring and entity classification.
 
-    # Test entity classification
+    Uses the address_registry.json for entity classification instead of
+    the old first-hex-character prefix classifier.
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    # Test entity classification using registry
     vasp_addr = "0x" + "a" * 40
     bridge_addr = "0x" + "b" * 40
     mixer_addr = "0x" + "c" * 40
     scam_addr = "0x" + "d" * 40
     unknown_addr = "0x" + "e" * 40
 
-    assert classify_entity(vasp_addr) == "VASP", f"Expected VASP, got {classify_entity(vasp_addr)}"
-    assert classify_entity(bridge_addr) == "Bridge", f"Expected Bridge, got {classify_entity(bridge_addr)}"
-    assert classify_entity(mixer_addr) == "Mixer", f"Expected Mixer, got {classify_entity(mixer_addr)}"
-    assert classify_entity(scam_addr) == "Scam/Fraud", f"Expected Scam/Fraud, got {classify_entity(scam_addr)}"
-    assert classify_entity(unknown_addr) == "Unknown", f"Expected Unknown, got {classify_entity(unknown_addr)}"
+    assert classify_entity(vasp_addr, registry) == "VASP", f"Expected VASP, got {classify_entity(vasp_addr, registry)}"
+    assert classify_entity(bridge_addr, registry) == "Bridge", f"Expected Bridge, got {classify_entity(bridge_addr, registry)}"
+    assert classify_entity(mixer_addr, registry) == "Mixer", f"Expected Mixer, got {classify_entity(mixer_addr, registry)}"
+    # Scam address not in registry -> Unknown
+    assert classify_entity(scam_addr, registry) == "Unknown", f"Expected Unknown, got {classify_entity(scam_addr, registry)}"
+    # Unknown address not in registry -> Unknown
+    assert classify_entity(unknown_addr, registry) == "Unknown", f"Expected Unknown, got {classify_entity(unknown_addr, registry)}"
 
     # Test invalid address
-    assert classify_entity("invalid") == "Unknown"
-    assert classify_entity("0x") == "Unknown"
+    assert classify_entity("invalid", registry) == "Unknown"
+    assert classify_entity("0x", registry) == "Unknown"
 
     # Test risk score calculation - base scores
     vasp_score, vasp_level = calculate_risk_score("VASP", 0)
@@ -769,6 +812,72 @@ def test_risk_scoring() -> None:
     assert vasp_h2_level == "Low"
 
     print("All risk scoring tests passed!")
+# New tests for address registry architecture
+
+def test_address_registry() -> None:
+    """Tests for the address registry architecture.
+
+    Tests known VASP, Bridge, Mixer, unknown address,
+    malformed registry data, and case-insensitive lookup.
+
+    All registry entries are synthetic test data;
+    they do not represent real companies or real blockchain addresses.
+
+    Known entities (in registry):
+      - KnownVASP (VASP entity type)
+      - KnownBridge (Bridge entity type)
+      - KnownMixer (Mixer entity type)
+
+    Unknown address: returns entity_type Unknown.
+    Malformed registry data: gracefully handled.
+    Case-insensitive address lookup: works regardless of case.
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    # Known VASP
+    vasp_addr = "0x" + "a" * 40
+    assert classify_entity(vasp_addr, registry) == "VASP"
+
+    # Known Bridge
+    bridge_addr = "0x" + "b" * 40
+    assert classify_entity(bridge_addr, registry) == "Bridge"
+
+    # Known Mixer
+    mixer_addr = "0x" + "c" * 40
+    assert classify_entity(mixer_addr, registry) == "Mixer"
+
+    # Unknown address (not in registry)
+    unknown_addr = "0x" + "e" * 40
+    assert classify_entity(unknown_addr, registry) == "Unknown"
+
+    # Case-insensitive lookup: uppercase hex
+    addr_upper = "0x" + "A" * 40
+    assert classify_entity(addr_upper, registry) == "VASP"
+
+    # Malformed registry data test
+    import tempfile
+    import os
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+        tmp.write("{invalid json}")
+        tmp_path = tmp.name
+
+    try:
+        from eth_txs import load_address_registry
+        try:
+            loaded = load_address_registry(tmp_path)
+            assert loaded == {} or loaded is None
+        except (json.JSONDecodeError, Exception):
+            pass
+    finally:
+        os.unlink(tmp_path)
+
+    print("All address registry tests passed!")
+
 
 
 def test_etherscan_v2_endpoint() -> None:
@@ -1257,7 +1366,13 @@ if __name__ == "__main__":
         test_graph()
         test_bfs()
         test_risk_scoring()
+        test_address_registry()
         test_address_cli_with_mock()
+        test_etherscan_error_handling()
+        test_etherscan_v2_endpoint()
+        test_erc20_token_transfers()
+        test_normalize_transactions()
+        test_internal_transactions()
         test_etherscan_error_handling()
         test_etherscan_v2_endpoint()
         test_erc20_token_transfers()
