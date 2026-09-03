@@ -1252,9 +1252,167 @@ def test_internal_transactions() -> None:
         os.remove("test_internal.json")
 
     print("test_internal_transactions passed!")
-
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         test_graph()
+        test_bfs()
+        test_risk_scoring()
+        test_address_cli_with_mock()
+        test_etherscan_error_handling()
+        test_etherscan_v2_endpoint()
+        test_erc20_token_transfers()
+        test_internal_transactions()
+        test_normalize_transactions()
     else:
         main()
+
+def build_unified_graph(transfers: list) -> dict:
+    from collections import defaultdict
+    graph = defaultdict(list)
+    for transfer in transfers:
+        if transfer["asset_type"] == "INTERNAL_ETH" and transfer.get("is_error") == "1":
+            continue
+        edge_key = f"{transfer['from_address']}->{transfer['to_address']}"
+        graph[edge_key].append(transfer)
+    return dict(graph)
+
+
+def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
+    if not is_valid_eth_address(start):
+        return {"visited": set(), "paths": {}}
+    visited = {start}
+    queue = [(start, [start], 0, [])]
+    paths = {start: ([start], [], 0)}
+    while queue:
+        current, path, hops, transfers = queue.pop(0)
+        if hops >= max_hops:
+            continue
+        for edge_key, txs in graph.items():
+            parts = edge_key.split("->")
+            if len(parts) != 2:
+                continue
+            sender, receiver = parts[0], parts[1]
+            if sender != current:
+                continue
+            for transfer in txs:
+                if transfer["asset_type"] == "INTERNAL_ETH" and transfer.get("is_error") == "1":
+                    continue
+                if receiver in visited:
+                    paths[receiver] = (paths[receiver][0], paths[receiver][1] + [transfer], paths[receiver][2])
+                    continue
+                new_path = path + [receiver]
+                new_transfers = transfers + [transfer]
+                new_hops = hops + 1
+                new_visited = visited | {receiver}
+                visited.add(receiver)
+                paths[receiver] = (new_path, new_transfers, new_hops)
+                queue.append((receiver, new_path, new_hops, new_transfers))
+    return {"visited": visited, "paths": paths}
+
+
+def test_unified_graph_transfers( ):
+    from eth_txs import normalize_eth_transaction, normalize_erc20_transfer, normalize_internal_transaction, build_unified_graph
+    eth_xfer = normalize_eth_transaction({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xeth1",
+        "timestamp": "1609459200",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 1.0,
+    })
+    usdt_xfer = normalize_erc20_transfer({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xusdt1",
+        "timestamp": "1609459200",
+        "asset_type": "ERC20",
+        "asset_contract": "0xusdtcontract",
+        "symbol": "USDT",
+        "amount": 1.0,
+    })
+    internal_fail = normalize_internal_transaction({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xintfail1",
+        "timestamp": "1609459200",
+        "asset_type": "INTERNAL_ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 0.5,
+        "is_error": "1",
+    })
+    internal_success = normalize_internal_transaction({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xintsuccess1",
+        "timestamp": "1609459200",
+        "asset_type": "INTERNAL_ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 0.5,
+        "is_error": "0",
+    })
+    transfers = [eth_xfer, usdt_xfer, internal_fail, internal_success]
+    graph = build_unified_graph(transfers)
+    edge = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert edge in graph
+    assert len(graph[edge]) == 2
+    for edge_key, transfers_list in graph.items():
+        for t in transfers_list:
+            assert t.get("is_error") != "1"
+    assert any(t["hash"] == "0xintsuccess1" for transfers_list in graph.values() for t in transfers_list)
+    print("test_build_unified_graph passed!")
+
+
+def test_bfs_unified( ):
+    from eth_txs import build_unified_graph, normalize_eth_transaction, normalize_erc20_transfer, normalize_internal_transaction, bfs_traverse_unified
+    eth_xfer = normalize_eth_transaction({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xeth1", "timestamp": "1609459200", "asset_type": "ETH", "asset_contract": None, "symbol": "ETH", "amount": 1.0,
+    })
+    usdt_xfer = normalize_erc20_transfer({
+        "from": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "to": "0xcccccccccccccccccccccccccccccccccccccccc",
+        "hash": "0xusdt1", "timestamp": "1609459201", "asset_type": "ERC20", "asset_contract": "0xusdt", "symbol": "USDT", "amount": 1.0,
+    })
+    int_success = normalize_internal_transaction({
+        "from": "0xcccccccccccccccccccccccccccccccccccccccc", "to": "0xdddddddddddddddddddddddddddddddddddddddd",
+        "hash": "0xint1", "timestamp": "1609459202", "asset_type": "INTERNAL_ETH", "asset_contract": None, "symbol": "ETH", "amount": 2.0, "is_error": "0",
+    })
+    int_fail = normalize_internal_transaction({
+        "from": "0xdddddddddddddddddddddddddddddddddddddddd", "to": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "hash": "0xintfail1", "timestamp": "1609459203", "asset_type": "INTERNAL_ETH", "asset_contract": None, "symbol": "ETH", "amount": 3.0, "is_error": "1",
+    })
+    transfers = [eth_xfer, usdt_xfer, int_success, int_fail]
+    graph = build_unified_graph(transfers)
+    result = bfs_traverse_unified(graph, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", max_hops=2)
+    assert "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in result["visited"]
+    assert "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" in result["visited"]
+    assert "0xcccccccccccccccccccccccccccccccccccccccc" in result["visited"]
+    assert "0xdddddddddddddddddddddddddddddddddddddddd" not in result["visited"]
+    path, transfers, hops = result["paths"]["0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+    assert hops == 1
+    assert len(transfers) == 1
+    assert transfers[0]["asset_type"] == "ETH"
+    path2, transfers2, hops2 = result["paths"]["0xcccccccccccccccccccccccccccccccccccccccc"]
+    assert hops2 == 2
+    usdt_in_path = any(t["symbol"] == "USDT" for t in transfers2)
+    assert usdt_in_path
+    assert "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" not in result["visited"]
+    five_hop_result = bfs_traverse_unified(graph, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", max_hops=5)
+    assert len(five_hop_result["visited"]) >= 4
+    zero_hop_result = bfs_traverse_unified(graph, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", max_hops=0)
+    assert zero_hop_result["visited"] == {"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    assert len(zero_hop_result["paths"]) == 1
+    path, transfers, hops = result["paths"]["0xcccccccccccccccccccccccccccccccccccccccc"]
+    assert len(transfers) >= 1
+    for t in transfers:
+        assert "hash" in t
+        assert "from_address" in t
+        assert "to_address" in t
+        assert "asset_type" in t
+        assert "symbol" in t
+        assert "amount" in t
+        assert "timestamp" in t
+    print("test_bfs_unified passed!")
