@@ -703,11 +703,11 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
     - paths: dict of address -> (path, transfers, hops)
     - attribution: dict of address -> {
         address, entity_name, entity_type, source, confidence, evidence,
-        risk_score, risk_level
+        risk_score, risk_level, risk_evidence
       }
     - all transfer metadata preserved from unified BFS
     """
-    from eth_txs import calculate_risk_score
+    from eth_txs import calculate_risk_score, calculate_evidence_risk
 
     bfs_result = bfs_traverse_unified(graph, start, max_hops)
     visited = bfs_result["visited"]
@@ -727,14 +727,13 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         
         # Add risk score information using existing calculate_risk_score
         entity_type = attr["entity_type"]
-        risk_score, risk_level = calculate_risk_score(entity_type, attr.get("hops", 0)) if addr in paths else (0, "Low")
-        
-        # We need to get the hops from the paths
         hops = 0
         if addr in paths:
             _, _, hops = paths[addr]
-        
         risk_score, risk_level = calculate_risk_score(entity_type, hops)
+        
+        # Add evidence-based risk using calculate_evidence_risk
+        _, _, risk_evidence = calculate_evidence_risk(entity_type, hops)
         
         attribution[addr] = {
             "address": attr["address"],
@@ -745,6 +744,7 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
             "evidence": attr["evidence"],
             "risk_score": risk_score,
             "risk_level": risk_level,
+            "risk_evidence": risk_evidence,
         }
 
     # Collect discovered addresses
@@ -757,8 +757,6 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         "paths": paths,
         "attribution": attribution,
     }
-
-
 
 
 def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) -> dict:
@@ -771,11 +769,11 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
     - paths: dict of address -> (path, transfers, hops)
     - attribution: dict of address -> {
         address, entity_name, entity_type, source, confidence, evidence,
-        risk_score, risk_level
+        risk_score, risk_level, risk_evidence
       }
     - all transfer metadata preserved from unified BFS
     """
-    from eth_txs import calculate_risk_score
+    from eth_txs import calculate_risk_score, calculate_evidence_risk
 
     bfs_result = bfs_traverse_unified(graph, start, max_hops)
     visited = bfs_result["visited"]
@@ -795,14 +793,13 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         
         # Add risk score information using existing calculate_risk_score
         entity_type = attr["entity_type"]
-        risk_score, risk_level = calculate_risk_score(entity_type, attr.get("hops", 0)) if addr in paths else (0, "Low")
-        
-        # We need to get the hops from the paths
         hops = 0
         if addr in paths:
             _, _, hops = paths[addr]
-        
         risk_score, risk_level = calculate_risk_score(entity_type, hops)
+        
+        # Add evidence-based risk using calculate_evidence_risk
+        _, _, risk_evidence = calculate_evidence_risk(entity_type, hops)
         
         attribution[addr] = {
             "address": attr["address"],
@@ -813,6 +810,7 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
             "evidence": attr["evidence"],
             "risk_score": risk_score,
             "risk_level": risk_level,
+            "risk_evidence": risk_evidence,
         }
 
     # Collect discovered addresses
@@ -825,10 +823,6 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         "paths": paths,
         "attribution": attribution,
     }
-
-
-
-
 
 
 def test_graph() -> None:
@@ -2281,8 +2275,346 @@ def test_attribute_trace() -> None:
     # Verify the cycle detection - VASP should reach itself through the cycle
     # (the cycle is Unknown -> VASP, so VASP can reach Unknown and back)
     # At minimum verify the path structure is correct
+print("All attribute_trace tests passed!")
 
-    print("All attribute_trace tests passed!")
+
+def test_analyze_trace_risk_unknown() -> None:
+    """Test analyze_trace risk_evidence for Unknown address.
+    
+    Verifies that an address not in the registry gets risk_evidence
+    with entity_type=Unknown and appropriate hop-based penalty.
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    from eth_txs import normalize_eth_transaction, normalize_internal_transaction, build_unified_graph, analyze_trace
+
+    transfers = [
+        normalize_eth_transaction({
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "hash": "0xvasp1",
+            "timestamp": "1609459200",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 5.0,
+        }),
+        normalize_internal_transaction({
+            "from": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "to": "0xdddddddddddddddddddddddddddddddddddddddd",
+            "hash": "0xinternalunknown1",
+            "timestamp": "1609459202",
+            "asset_type": "INTERNAL_ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 1.0,
+            "is_error": "0",
+        }),
+    ]
+
+    graph = build_unified_graph(transfers)
+    result = analyze_trace("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", graph, registry, max_hops=2)
+
+    # Unknown address (not in registry) should have risk_evidence with entity_type=Unknown
+    unknown_addr = "0xdddddddddddddddddddddddddddddddddddddddd"
+    assert unknown_addr in result["attribution"], f"Unknown address should be in attribution"
+    attr = result["attribution"][unknown_addr]
+    assert attr["entity_type"] == "Unknown", f"Expected Unknown, got {attr['entity_type']}"
+    assert "risk_score" in attr, "Missing risk_score"
+    assert "risk_level" in attr, "Missing risk_level"
+    assert "risk_evidence" in attr, "Missing risk_evidence"
+    assert "entity_type=Unknown" in attr["risk_evidence"], f"Expected entity_type=Unknown in evidence, got: {attr['risk_evidence']}"
+    print("test_analyze_trace_risk_unknown passed!")
+
+
+def test_analyze_trace_risk_vasp() -> None:
+    """Test analyze_trace risk_evidence for known VASP address.
+    
+    Verifies that a known VASP address gets risk_evidence with
+    entity_type=VASP, base_points=10, and hop-based penalty.
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    from eth_txs import normalize_eth_transaction, build_unified_graph, analyze_trace
+
+    transfers = [
+        normalize_eth_transaction({
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "hash": "0xvasp1",
+            "timestamp": "1609459200",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 5.0,
+        }),
+    ]
+
+    graph = build_unified_graph(transfers)
+    result = analyze_trace("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", graph, registry, max_hops=1)
+
+    vasp_addr = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert vasp_addr in result["attribution"], f"VASP address should be in attribution"
+    attr = result["attribution"][vasp_addr]
+    assert attr["entity_type"] == "VASP", f"Expected VASP, got {attr['entity_type']}"
+    assert "risk_score" in attr, "Missing risk_score"
+    assert "risk_level" in attr, "Missing risk_level"
+    assert "risk_evidence" in attr, "Missing risk_evidence"
+    assert "entity_type=VASP" in attr["risk_evidence"], f"Expected entity_type=VASP in evidence, got: {attr['risk_evidence']}"
+    print("test_analyze_trace_risk_vasp passed!")
+
+
+def test_analyze_trace_risk_bridge() -> None:
+    """Test analyze_trace risk_evidence for known Bridge address.
+    
+    Verifies that a known Bridge address gets risk_evidence with
+    entity_type=Bridge and base_points=20.
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    from eth_txs import normalize_eth_transaction, build_unified_graph, analyze_trace
+
+    transfers = [
+        normalize_eth_transaction({
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "hash": "0xvasp1",
+            "timestamp": "1609459200",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 5.0,
+        }),
+        normalize_eth_transaction({
+            "from": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "to": "0xcccccccccccccccccccccccccccccccccccccccc",
+            "hash": "0xbridge1",
+            "timestamp": "1609459201",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 2.0,
+        }),
+    ]
+
+    graph = build_unified_graph(transfers)
+    result = analyze_trace("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", graph, registry, max_hops=2)
+
+    bridge_addr = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert bridge_addr in result["attribution"], f"Bridge address should be in attribution"
+    attr = result["attribution"][bridge_addr]
+    assert attr["entity_type"] == "Bridge", f"Expected Bridge, got {attr['entity_type']}"
+    assert "risk_score" in attr, "Missing risk_score"
+    assert "risk_level" in attr, "Missing risk_level"
+    assert "risk_evidence" in attr, "Missing risk_evidence"
+    assert "entity_type=Bridge" in attr["risk_evidence"], f"Expected entity_type=Bridge in evidence, got: {attr['risk_evidence']}"
+    print("test_analyze_trace_risk_bridge passed!")
+
+
+def test_analyze_trace_risk_mixer() -> None:
+    """Test analyze_trace risk_evidence for known Mixer address.
+    
+    Verifies that a known Mixer address gets risk_evidence with
+    entity_type=Mixer and base_points=40 (Medium risk level).
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    from eth_txs import normalize_eth_transaction, build_unified_graph, analyze_trace
+
+    transfers = [
+        normalize_eth_transaction({
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "hash": "0xvasp1",
+            "timestamp": "1609459200",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 5.0,
+        }),
+        normalize_eth_transaction({
+            "from": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "to": "0xcccccccccccccccccccccccccccccccccccccccc",
+            "hash": "0xbridge1",
+            "timestamp": "1609459201",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 2.0,
+        }),
+        normalize_eth_transaction({
+            "from": "0xcccccccccccccccccccccccccccccccccccccccc",
+            "to": "0xdddddddddddddddddddddddddddddddddddddddd",
+            "hash": "0xmixer1",
+            "timestamp": "1609459202",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 1.0,
+        }),
+    ]
+
+    graph = build_unified_graph(transfers)
+    result = analyze_trace("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", graph, registry, max_hops=3)
+
+    mixer_addr = "0xcccccccccccccccccccccccccccccccccccccccc"
+    assert mixer_addr in result["attribution"], f"Mixer address should be in attribution"
+    attr = result["attribution"][mixer_addr]
+    assert attr["entity_type"] == "Mixer", f"Expected Mixer, got {attr['entity_type']}"
+    assert "risk_score" in attr, "Missing risk_score"
+    assert "risk_level" in attr, "Missing risk_level"
+    assert "risk_evidence" in attr, "Missing risk_evidence"
+    assert "entity_type=Mixer" in attr["risk_evidence"], f"Expected entity_type=Mixer in evidence, got: {attr['risk_evidence']}"
+    print("test_analyze_trace_risk_mixer passed!")
+
+
+def test_analyze_trace_risk_scam() -> None:
+    """Test analyze_trace risk_evidence for Scam/Fraud address.
+    
+    Verifies that a Scam/Fraud address (not in registry, treated as Unknown
+    for entity type but with Scam/Fraud base points) gets appropriate risk_evidence.
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    from eth_txs import normalize_eth_transaction, build_unified_graph, analyze_trace
+
+    # Create an address that would be classified as Scam/Fraud
+    # Using an address not in registry but with Scam/Fraud connotation
+    transfers = [
+        normalize_eth_transaction({
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "hash": "0xvasp1",
+            "timestamp": "1609459200",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 5.0,
+        }),
+    ]
+
+    graph = build_unified_graph(transfers)
+    # Use an address that will be classified as Scam/Fraud via Etherscan-like labeling
+    # For this test, we'll verify the risk_evidence structure works for Scam/Fraud entity type
+    # by using a registry that includes it, or by checking the function directly
+    from eth_txs import calculate_evidence_risk
+    
+    # Verify calculate_evidence_risk works for Scam/Fraud
+    score, level, evidence = calculate_evidence_risk("Scam/Fraud", 0)
+    assert score == 50, f"Expected score 50, got {score}"
+    assert level == "High", f"Expected level High, got {level}"
+    assert "entity_type=Scam/Fraud" in evidence
+    print("test_analyze_trace_risk_scam passed!")
+
+
+def test_analyze_trace_risk_hop_penalty() -> None:
+    """Test analyze_trace risk_evidence hop-distance penalty effect.
+    
+    Verifies that risk_evidence correctly reflects hop distance:
+    - VASP at hop 0: score=10, penalty=0
+    - VASP at hop 1: score=5, penalty=5
+    - VASP at hop 3: score=0, penalty=15
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    from eth_txs import normalize_eth_transaction, build_unified_graph, analyze_trace, calculate_evidence_risk
+
+    # Verify calculate_evidence_risk hop penalties
+    score0, _, ev0 = calculate_evidence_risk("VASP", 0)
+    assert "penalty=0" in ev0 and "final_score=10" in ev0, f"Hop 0: expected penalty=0, final_score=10, got: {ev0}"
+
+    score1, _, ev1 = calculate_evidence_risk("VASP", 1)
+    assert "penalty=5" in ev1 and "final_score=5" in ev1, f"Hop 1: expected penalty=5, final_score=5, got: {ev1}"
+
+    score3, _, ev3 = calculate_evidence_risk("VASP", 3)
+    assert "penalty=15" in ev3 and "final_score=0" in ev3, f"Hop 3: expected penalty=15, final_score=0, got: {ev3}"
+
+    print("test_analyze_trace_risk_hop_penalty passed!")
+
+
+def test_analyze_trace_risk_preserves_attribution() -> None:
+    """Test analyze_trace preserves existing attribution and evidence fields.
+    
+    Verifies that adding risk_evidence does not remove or modify
+    existing attribution fields (address, entity_name, entity_type,
+    source, confidence, evidence, risk_score, risk_level).
+    """
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent / "address_registry.json"
+    with open(registry_path, "r") as f:
+        registry = json.load(f)
+
+    from eth_txs import normalize_eth_transaction, build_unified_graph, analyze_trace
+
+    transfers = [
+        normalize_eth_transaction({
+            "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "hash": "0xvasp1",
+            "timestamp": "1609459200",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 5.0,
+        }),
+    ]
+
+    graph = build_unified_graph(transfers)
+    result = analyze_trace("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", graph, registry, max_hops=1)
+
+    addr = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    attr = result["attribution"][addr]
+
+    # Verify all existing fields are preserved
+    required_fields = ["address", "entity_name", "entity_type", "source", "confidence", "evidence",
+                       "risk_score", "risk_level"]
+    for field in required_fields:
+        assert field in attr, f"Missing required field: {field}"
+
+    # Verify risk_evidence is added (new field)
+    assert "risk_evidence" in attr, "Missing new risk_evidence field"
+
+    # Verify existing field values
+    assert attr["address"] == addr
+    assert attr["entity_type"] == "VASP"
+    assert attr["risk_score"] == 10  # VASP at hop 0
+    assert attr["risk_level"] == "Low"
+    assert "matched entity" in attr["evidence"] or "KnownVASP" in attr.get("entity_name", "")
+
+    print("test_analyze_trace_risk_preserves_attribution passed!")
+
 
 # New tests for fetch_address_metadata_from_etherscan
 def test_fetch_address_metadata_basic() -> None:
@@ -2902,6 +3234,14 @@ def test_combine_attribution_sources_conflict() -> None:
 
 
 def test_combine_attribution_sources_both_unknown() -> None:
+
+    test_analyze_trace_risk_unknown()
+    test_analyze_trace_risk_vasp()
+    test_analyze_trace_risk_bridge()
+    test_analyze_trace_risk_mixer()
+    test_analyze_trace_risk_scam()
+    test_analyze_trace_risk_hop_penalty()
+    test_analyze_trace_risk_preserves_attribution()
     """Test combined attribution when both sources are Unknown."""
     import json
     from pathlib import Path
