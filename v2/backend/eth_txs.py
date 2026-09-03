@@ -826,6 +826,25 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         # Graceful degradation - return empty patterns on any error
         patterns = []
 
+    # --- Pattern-Aware Risk Integration (Step 18C) ---
+    # Calculate pattern risk using detected patterns
+    try:
+        from eth_txs import calculate_pattern_risk, combine_risk_scores
+        pattern_analysis = calculate_pattern_risk(patterns)
+        pattern_score = pattern_analysis['pattern_score']
+        pattern_risk_level = pattern_analysis['risk_level']
+        pattern_reasons = pattern_analysis['reasons']
+    except Exception:
+        pattern_analysis = {'pattern_score': 0, 'risk_level': 'Low', 'reasons': []}
+    
+    # Get the evidence risk - use the max risk_score from attribution
+    evidence_risk = 0
+    if attribution:
+        evidence_risk = max([a.get('risk_score', 0) for a in attribution.values()])
+    
+    # Combine evidence risk with pattern risk
+    combo = combine_risk_scores(evidence_risk, pattern_analysis['pattern_score'])
+    
     return {
         "start": start,
         "discovered": discovered,
@@ -833,6 +852,11 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         "paths": paths,
         "attribution": attribution,
         "patterns": patterns,
+        "overall_risk": {
+            "score": combo['score'],
+            "risk_level": combo['risk_level'],
+            "reasons": combo['reasons'],
+        },
     }
 
 
@@ -969,6 +993,25 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         # Graceful degradation - return empty patterns on any error
         patterns = []
 
+    # --- Pattern-Aware Risk Integration (Step 18C) ---
+    # Calculate pattern risk using detected patterns
+    try:
+        from eth_txs import calculate_pattern_risk, combine_risk_scores
+        pattern_analysis = calculate_pattern_risk(patterns)
+        pattern_score = pattern_analysis['pattern_score']
+        pattern_risk_level = pattern_analysis['risk_level']
+        pattern_reasons = pattern_analysis['reasons']
+    except Exception:
+        pattern_analysis = {'pattern_score': 0, 'risk_level': 'Low', 'reasons': []}
+    
+    # Get the evidence risk - use the max risk_score from attribution
+    evidence_risk = 0
+    if attribution:
+        evidence_risk = max([a.get('risk_score', 0) for a in attribution.values()])
+    
+    # Combine evidence risk with pattern risk
+    combo = combine_risk_scores(evidence_risk, pattern_analysis['pattern_score'])
+    
     return {
         "start": start,
         "discovered": discovered,
@@ -976,6 +1019,11 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         "paths": paths,
         "attribution": attribution,
         "patterns": patterns,
+        "overall_risk": {
+            "score": combo['score'],
+            "risk_level": combo['risk_level'],
+            "reasons": combo['reasons'],
+        },
     }
 
 
@@ -3604,3 +3652,190 @@ def test_bfs_unified( ):
         assert "amount" in t
         assert "timestamp" in t
     print("test_bfs_unified passed!")
+
+
+def calculate_pattern_risk(patterns):
+    """Calculate risk score from detected behavioral patterns.
+
+    Returns a dict with pattern_score, risk_level, and reasons.
+    Pattern contributions are conservative and explainable:
+    - FAN_OUT_SPLITTING: +10
+    - FAN_IN_CONSOLIDATION: +10
+    - RAPID_WALLET_HOPPING: +15
+    - LAYERING: +15
+    - Maximum total pattern contribution: 40
+    - Duplicate patterns do not inflate indefinitely.
+    - Pattern risk is additive to evidence risk, not replacement.
+
+    Returns:
+        dict with keys:
+        - pattern_score: int (0-40)
+        - risk_level: str (Low/Medium/High/Critical based on additive total)
+        - reasons: list of strings explaining contributions
+    """
+    PATTERN_POINTS = {
+        'FAN_OUT_SPLITTING': 10,
+        'FAN_IN_CONSOLIDATION': 10,
+        'RAPID_WALLET_HOPPING': 15,
+        'LAYERING': 15,
+    }
+
+    seen_patterns = set()
+    pattern_score = 0
+    reasons = []
+
+    for pattern in patterns:
+        ptype = pattern.get('pattern_type', '')
+        if ptype not in PATTERN_POINTS or ptype in seen_patterns:
+            continue
+        seen_patterns.add(ptype)
+        pattern_score += PATTERN_POINTS[ptype]
+        reasons.append(f'Behavioral signal: {ptype}')
+
+    pattern_score = min(pattern_score, 40)
+
+    if pattern_score < 25:
+        risk_level = 'Low'
+    elif pattern_score < 50:
+        risk_level = 'Medium'
+    elif pattern_score < 75:
+        risk_level = 'High'
+    else:
+        risk_level = 'Critical'
+
+    return {
+        'pattern_score': pattern_score,
+        'risk_level': risk_level,
+        'reasons': reasons,
+    }
+
+
+def combine_risk_scores(evidence_risk, pattern_risk):
+    """Combine existing evidence-based risk with pattern risk.
+
+    evidence_risk: int (0-100) from calculate_evidence_risk or analyze_trace
+    pattern_risk: int (0-40) from calculate_pattern_risk
+
+    The final score must remain between 0 and 100.
+    Pattern risk is additive to evidence risk, not replacement.
+
+    Returns dict with:
+    - score: int (0-100)
+    - risk_level: str (Low/Medium/High/Critical)
+    - reasons: list of strings explaining the combined score
+    """
+    pattern_risk = min(pattern_risk, 40)
+    total_score = min(100, evidence_risk + pattern_risk)
+
+    if total_score < 25:
+        risk_level = 'Low'
+    elif total_score < 50:
+        risk_level = 'Medium'
+    elif total_score < 75:
+        risk_level = 'High'
+    else:
+        risk_level = 'Critical'
+
+    reasons = []
+    if evidence_risk > 0:
+        reasons.append(f'Base evidence risk: {evidence_risk}')
+    if pattern_risk > 0:
+        reasons.append(f'Behavioral signal: +{pattern_risk}')
+
+    return {
+        'score': total_score,
+        'risk_level': risk_level,
+        'reasons': reasons,
+    }
+
+
+def test_calculate_pattern_risk_no_patterns():
+    """Test that zero patterns gives zero contribution."""
+    from eth_txs import calculate_pattern_risk
+    result = calculate_pattern_risk([])
+    assert result['pattern_score'] == 0
+    assert result['risk_level'] == 'Low'
+    assert result['reasons'] == []
+    print('test_calculate_pattern_risk_no_patterns passed!')
+
+
+def test_calculate_pattern_risk_fan_out():
+    """Test fan-out contribution."""
+    from eth_txs import calculate_pattern_risk
+    patterns = [
+        {
+            'pattern_type': 'FAN_OUT_SPLITTING',
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'recipient_count': 5,
+            'recipients': ['0xrec1', '0xrec2', '0xrec3', '0xrec4', '0xrec5'],
+            'total_outbound_amount': 10.0,
+            'transaction_count': 5,
+            'description': 'Address split funds out to 5 distinct recipients.',
+        }
+    ]
+    result = calculate_pattern_risk(patterns)
+    assert result['pattern_score'] == 10
+    assert result['risk_level'] == 'Low'
+    assert 'Behavioral signal: FAN_OUT_SPLITTING' in result['reasons']
+    print('test_calculate_pattern_risk_fan_out passed!')
+
+
+def test_calculate_pattern_risk_duplicate_capped():
+    """Test that duplicate patterns dont inflate the score."""
+    from eth_txs import calculate_pattern_risk
+    patterns = [
+        {
+            'pattern_type': 'FAN_OUT_SPLITTING',
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'recipient_count': 5,
+            'recipients': ['0xrec1', '0xrec2', '0xrec3', '0xrec4', '0xrec5'],
+            'total_outbound_amount': 10.0,
+            'transaction_count': 5,
+            'description': 'First fan-out.',
+        },
+        {
+            'pattern_type': 'FAN_OUT_SPLITTING',
+            'address': '0xother other address',
+            'recipient_count': 3,
+            'recipients': ['0xrecA', '0xrecB', '0xrecC'],
+            'total_outbound_amount': 5.0,
+            'transaction_count': 3,
+            'description': 'Second fan-out.',
+        },
+    ]
+    result = calculate_pattern_risk(patterns)
+    assert result['pattern_score'] == 10
+    print('test_calculate_pattern_risk_duplicate_capped passed!')
+
+
+def test_combine_risk_scores():
+    """Test risk score combination."""
+    from eth_txs import calculate_pattern_risk, combine_risk_scores
+
+    # No pattern risk
+    result = combine_risk_scores(40, 0)
+    assert result['score'] == 40
+    assert result['risk_level'] == 'Medium'
+
+    # Add pattern risk
+    result = combine_risk_scores(40, 10)
+    assert result['score'] == 50
+    assert result['risk_level'] == 'High'
+
+    # Cap at 100
+    result = combine_risk_scores(95, 10)
+    assert result['score'] == 100
+    assert result['risk_level'] == 'Critical'
+
+    # Pattern risk alone should not push below 0
+    result = combine_risk_scores(0, 20)
+    assert result['score'] == 20
+    print('test_combine_risk_scores passed!')
+
+
+def run_pattern_risk_tests():
+    test_calculate_pattern_risk_no_patterns()
+    test_calculate_pattern_risk_fan_out()
+    test_calculate_pattern_risk_duplicate_capped()
+    test_combine_risk_scores()
+    print('All pattern risk tests passed!')
