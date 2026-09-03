@@ -1667,8 +1667,8 @@ def fetch_address_metadata_from_etherscan(address: str) -> dict:
 
     base_url = "https://api.etherscan.io/v2/api"
     params = {
-        "module": "account",
-        "action": "profile",
+        "module": "nametag",
+        "action": "getaddresstag",
         "address": address,
         "chainid": "1",
         "apikey": api_key,
@@ -1691,7 +1691,7 @@ def fetch_address_metadata_from_etherscan(address: str) -> dict:
                 "raw_metadata": data,
             }
 
-        result_data = data.get("result", {})
+        result_data = data.get("result", [])
         if not result_data:
             return {
                 "address": address,
@@ -1699,13 +1699,17 @@ def fetch_address_metadata_from_etherscan(address: str) -> dict:
                 "entity_type": "Unknown",
                 "source": "Etherscan Metadata",
                 "confidence": 0.0,
-                "evidence": "No profile data returned from Etherscan",
+                "evidence": "No nametag data returned from Etherscan",
                 "raw_metadata": data,
             }
 
         # Parse labels and nametags from Etherscan profile
+        # Etherscan V2 result is a single object (not array) for getaddresstag
+        if isinstance(result_data, list):
+            result_data = result_data[0] if result_data else {}
+        
         labels = result_data.get("labels", [])
-        name_tags = result_data.get("name", "")
+        name_tags = result_data.get("nametag", "")
 
         # Build entity_type and entity_name from labels conservatively
         entity_type = "Unknown"
@@ -1762,7 +1766,7 @@ def fetch_address_metadata_from_etherscan(address: str) -> dict:
                     entity_name = label_name.capitalize() if label_name and label_name != "unknown" else "Unknown"
                 label_descriptions.append(f"Label: {label.get("name", "N/A")}")
 
-        # Also check the overall name tag if present and entity_type still Unknown
+        # Also check the overall nametag if present and entity_type still Unknown
         if name_tags and entity_type == "Unknown":
             name_lower = str(name_tags).lower()
             if any(v in name_lower for v in vasp_labels):
@@ -2349,7 +2353,7 @@ def test_fetch_address_metadata_confidence_name_only() -> None:
 
     os.environ["ETHERSCAN_API_KEY"] = "testkey"
 
-    # Mock Etherscan API response with name but no labels
+    # Mock Etherscan API response with nametag but no labels (V2 getaddresstag format)
     mock_metadata_data = {
         "status": "1",
         "message": "OK",
@@ -2358,7 +2362,7 @@ def test_fetch_address_metadata_confidence_name_only() -> None:
             "balance": "1000000000000000000",
             "is_mfa": "0",
             "comment": "",
-            "name": "MyCryptoWallet",
+            "nametag": "MyCryptoWallet",
             "flags": {},
             "labels": [],
             "page": 1,
