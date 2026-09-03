@@ -705,9 +705,11 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         address, entity_name, entity_type, source, confidence, evidence,
         risk_score, risk_level, risk_evidence
       }
+    - patterns: list of detected behavioral pattern signals (investigative only)
     - all transfer metadata preserved from unified BFS
     """
     from eth_txs import calculate_risk_score, calculate_evidence_risk
+    from pattern_detector import PatternDetector
 
     bfs_result = bfs_traverse_unified(graph, start, max_hops)
     visited = bfs_result["visited"]
@@ -750,12 +752,87 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
     # Collect discovered addresses
     discovered = sorted(visited)
 
+    # --- Behavioral Pattern Detection (Step 18B) ---
+    # Convert eth_txs graph format to pattern_detector format
+    # eth_txs graph: {"FROM->TO": [{"hash": h, "value_eth": v, "timestamp": t}, ...]}
+    # pattern_detector expects: {address: [{"to": addr, "amount": val, "hash": h, "timestamp": t}, ...]}
+    try:
+        pat_graph = {}
+        for edge_key, txs in graph.items():
+            parts = edge_key.split("->")
+            if len(parts) != 2:
+                continue
+            source = parts[0]
+            if source not in pat_graph:
+                pat_graph[source] = []
+            for tx in txs:
+                pat_tx = {
+                    "to": parts[1],
+                    "amount": tx.get("value_eth", tx.get("amount", 0)),
+                    "hash": tx.get("hash", ""),
+                    "timestamp": tx.get("timestamp", ""),
+                }
+                pat_graph[source].append(pat_tx)
+        
+        # Run all pattern detectors
+        pattern_summary = PatternDetector().detect_all_patterns(pat_graph, None)
+        
+        # Extract just the pattern events (not the summary)
+        patterns = []
+        for pe in pattern_summary.get("fan_out_events", []):
+            patterns.append({
+                "pattern_type": pe.get("pattern_type", "FAN_OUT_SPLITTING"),
+                "risk_signal": pe.get("risk_signal", ""),
+                "address": pe.get("address", ""),
+                "recipient_count": pe.get("recipient_count", 0),
+                "recipients": pe.get("recipients", []),
+                "total_outbound_amount": pe.get("total_outbound_amount", 0),
+                "transaction_count": pe.get("transaction_count", 0),
+                "description": pe.get("description", ""),
+            })
+        for pe in pattern_summary.get("fan_in_events", []):
+            patterns.append({
+                "pattern_type": pe.get("pattern_type", "FAN_IN_CONSOLIDATION"),
+                "risk_signal": pe.get("risk_signal", ""),
+                "address": pe.get("address", ""),
+                "sender_count": pe.get("sender_count", 0),
+                "senders": pe.get("senders", []),
+                "total_inbound_amount": pe.get("total_inbound_amount", 0),
+                "transaction_count": pe.get("transaction_count", 0),
+                "description": pe.get("description", ""),
+            })
+        for pe in pattern_summary.get("rapid_hopping_events", []):
+            patterns.append({
+                "pattern_type": pe.get("pattern_type", "RAPID_WALLET_HOPPING"),
+                "risk_signal": pe.get("risk_signal", ""),
+                "hop_1_from": pe.get("hop_1_from", ""),
+                "intermediate_address": pe.get("intermediate_address", ""),
+                "hop_2_to": pe.get("hop_2_to", ""),
+                "time_delta_seconds": pe.get("time_delta_seconds", 0),
+                "tx1_hash": pe.get("tx1_hash", ""),
+                "tx2_hash": pe.get("tx2_hash", ""),
+                "description": pe.get("description", ""),
+            })
+        for pe in pattern_summary.get("layering_events", []):
+            patterns.append({
+                "pattern_type": pe.get("pattern_type", "MULTI_HOP_LAYERING"),
+                "risk_signal": pe.get("risk_signal", ""),
+                "max_hop_depth": pe.get("max_hop_depth", 0),
+                "deep_address_count": pe.get("deep_address_count", 0),
+                "addresses": pe.get("addresses", []),
+                "description": pe.get("description", ""),
+            })
+    except Exception:
+        # Graceful degradation - return empty patterns on any error
+        patterns = []
+
     return {
         "start": start,
         "discovered": discovered,
         "hop_count": max_hops_reached,
         "paths": paths,
         "attribution": attribution,
+        "patterns": patterns,
     }
 
 
@@ -771,9 +848,11 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         address, entity_name, entity_type, source, confidence, evidence,
         risk_score, risk_level, risk_evidence
       }
+    - patterns: list of detected behavioral pattern signals (investigative only)
     - all transfer metadata preserved from unified BFS
     """
     from eth_txs import calculate_risk_score, calculate_evidence_risk
+    from pattern_detector import PatternDetector
 
     bfs_result = bfs_traverse_unified(graph, start, max_hops)
     visited = bfs_result["visited"]
@@ -816,12 +895,87 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
     # Collect discovered addresses
     discovered = sorted(visited)
 
+    # --- Behavioral Pattern Detection (Step 18B) ---
+    # Convert eth_txs graph format to pattern_detector format
+    # eth_txs graph: {"FROM->TO": [{"hash": h, "value_eth": v, "timestamp": t}, ...]}
+    # pattern_detector expects: {address: [{"to": addr, "amount": val, "hash": h, "timestamp": t}, ...]}
+    try:
+        pat_graph = {}
+        for edge_key, txs in graph.items():
+            parts = edge_key.split("->")
+            if len(parts) != 2:
+                continue
+            source = parts[0]
+            if source not in pat_graph:
+                pat_graph[source] = []
+            for tx in txs:
+                pat_tx = {
+                    "to": parts[1],
+                    "amount": tx.get("value_eth", tx.get("amount", 0)),
+                    "hash": tx.get("hash", ""),
+                    "timestamp": tx.get("timestamp", ""),
+                }
+                pat_graph[source].append(pat_tx)
+        
+        # Run all pattern detectors
+        pattern_summary = PatternDetector().detect_all_patterns(pat_graph, None)
+        
+        # Extract just the pattern events (not the summary)
+        patterns = []
+        for pe in pattern_summary.get("fan_out_events", []):
+            patterns.append({
+                "pattern_type": pe.get("pattern_type", "FAN_OUT_SPLITTING"),
+                "risk_signal": pe.get("risk_signal", ""),
+                "address": pe.get("address", ""),
+                "recipient_count": pe.get("recipient_count", 0),
+                "recipients": pe.get("recipients", []),
+                "total_outbound_amount": pe.get("total_outbound_amount", 0),
+                "transaction_count": pe.get("transaction_count", 0),
+                "description": pe.get("description", ""),
+            })
+        for pe in pattern_summary.get("fan_in_events", []):
+            patterns.append({
+                "pattern_type": pe.get("pattern_type", "FAN_IN_CONSOLIDATION"),
+                "risk_signal": pe.get("risk_signal", ""),
+                "address": pe.get("address", ""),
+                "sender_count": pe.get("sender_count", 0),
+                "senders": pe.get("senders", []),
+                "total_inbound_amount": pe.get("total_inbound_amount", 0),
+                "transaction_count": pe.get("transaction_count", 0),
+                "description": pe.get("description", ""),
+            })
+        for pe in pattern_summary.get("rapid_hopping_events", []):
+            patterns.append({
+                "pattern_type": pe.get("pattern_type", "RAPID_WALLET_HOPPING"),
+                "risk_signal": pe.get("risk_signal", ""),
+                "hop_1_from": pe.get("hop_1_from", ""),
+                "intermediate_address": pe.get("intermediate_address", ""),
+                "hop_2_to": pe.get("hop_2_to", ""),
+                "time_delta_seconds": pe.get("time_delta_seconds", 0),
+                "tx1_hash": pe.get("tx1_hash", ""),
+                "tx2_hash": pe.get("tx2_hash", ""),
+                "description": pe.get("description", ""),
+            })
+        for pe in pattern_summary.get("layering_events", []):
+            patterns.append({
+                "pattern_type": pe.get("pattern_type", "MULTI_HOP_LAYERING"),
+                "risk_signal": pe.get("risk_signal", ""),
+                "max_hop_depth": pe.get("max_hop_depth", 0),
+                "deep_address_count": pe.get("deep_address_count", 0),
+                "addresses": pe.get("addresses", []),
+                "description": pe.get("description", ""),
+            })
+    except Exception:
+        # Graceful degradation - return empty patterns on any error
+        patterns = []
+
     return {
         "start": start,
         "discovered": discovered,
         "hop_count": max_hops_reached,
         "paths": paths,
         "attribution": attribution,
+        "patterns": patterns,
     }
 
 
