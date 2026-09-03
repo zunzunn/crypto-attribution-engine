@@ -1,0 +1,22 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crypto-attribution-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ETHERSCAN_API_KEY=${ETHERSCAN_API_KEY:-""}
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crypto-attribution-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: always

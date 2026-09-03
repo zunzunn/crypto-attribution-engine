@@ -1,0 +1,23 @@
+{
+  "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+    "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "entity_name": "KnownVASP",
+    "entity_type": "VASP",
+    "source": "synthetic_test_registry",
+    "confidence": 1.0
+  },
+  "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+    "address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "entity_name": "KnownBridge",
+    "entity_type": "Bridge",
+    "source": "synthetic_test_registry",
+    "confidence": 1.0
+  },
+  "0xcccccccccccccccccccccccccccccccccccccccc": {
+    "address": "0xcccccccccccccccccccccccccccccccccccccccc",
+    "entity_name": "KnownMixer",
+    "entity_type": "Mixer",
+    "source": "synthetic_test_registry",
+    "confidence": 1.0
+  }
+}
