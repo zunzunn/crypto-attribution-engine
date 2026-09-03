@@ -1,0 +1,44 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ feature/backend, develop ]
+    paths:
+      - 'v2/backend/**'
+  pull_request:
+    branches: [ feature/backend, develop, main ]
+    paths:
+      - 'v2/backend/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: v2/backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: v2/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Core Engine & Risk Scoring Tests
+        working-directory: v2/backend
+        run: python eth_txs.py test
+
+      - name: Run Behavioral Pattern Detector Tests
+        working-directory: v2/backend
+        run: python pattern_detector.py
+
+      - name: Run Report Generator Tests
+        working-directory: v2/backend
+        run: python report_generator.py

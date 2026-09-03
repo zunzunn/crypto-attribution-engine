@@ -1,0 +1,43 @@
+name: Main Production & Docker CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  full-stack-validation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test Backend
+        working-directory: v2/backend
+        run: |
+          pip install -r requirements.txt
+          python eth_txs.py test
+          python pattern_detector.py
+          python report_generator.py
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Test Frontend Build
+        working-directory: v2/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Validate Docker Compose Configuration
+        working-directory: v2
+        run: docker compose config
