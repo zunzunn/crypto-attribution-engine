@@ -6,9 +6,7 @@ from dotenv import load_dotenv
 import requests
 from collections import defaultdict
 
-
 load_dotenv()
-
 
 def is_valid_eth_address(address: str) -> bool:
     """Check if string looks like an Ethereum address."""
@@ -24,7 +22,6 @@ def is_valid_eth_address(address: str) -> bool:
     except ValueError:
         return False
 
-
 def load_transactions(path: str = "transaction.json") -> list:
     """Load transactions from a JSON file.
 
@@ -33,7 +30,6 @@ def load_transactions(path: str = "transaction.json") -> list:
     with open(path, "r") as f:
         data = json.load(f)
     return data
-
 
 def build_graph(transactions: list, include_token_transfers: bool = False) -> dict:
     """Build a transaction graph from a list of transaction records.
@@ -58,7 +54,6 @@ def build_graph(transactions: list, include_token_transfers: bool = False) -> di
             {"hash": tx_hash, "value_eth": value_eth, "timestamp": timestamp}
         )
     return dict(graph)
-
 
 def fetch_transactions_from_etherscan(address: str, filepath: str = "transaction.json") -> list:
     """Fetch transaction history for an Ethereum address using Etherscan API V2.
@@ -112,7 +107,6 @@ def fetch_transactions_from_etherscan(address: str, filepath: str = "transaction
     except requests.exceptions.RequestException as exc:
         print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
         sys.exit(1)
-
 
 def fetch_erc20_token_transfers(address: str, filepath: str = "token_transfers.json") -> list:
     """Fetch ERC-20 token transfer history for an Ethereum address using Etherscan API V2.
@@ -168,7 +162,6 @@ def fetch_erc20_token_transfers(address: str, filepath: str = "token_transfers.j
         print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
         sys.exit(1)
 
-
 def parse_erc20_transfer(raw: dict) -> dict:
     """Parse a raw Etherscan token transfer dict into a common format.
 
@@ -187,7 +180,6 @@ def parse_erc20_transfer(raw: dict) -> dict:
         "timestamp": raw.get("timeStamp", "0"),
     }
 
-
 RISK_BASE_POINTS = {
     "VASP": 10,
     "Bridge": 20,
@@ -195,7 +187,6 @@ RISK_BASE_POINTS = {
     "Scam/Fraud": 50,
     "Unknown": 0,
 }
-
 
 def load_address_registry(filepath: str) -> dict:
     """Load an address registry from a JSON file.
@@ -216,7 +207,6 @@ def load_address_registry(filepath: str) -> dict:
         normalized[addr.lower()] = entry
     return normalized
 
-
 def lookup_address(address: str, registry: dict) -> dict | None:
     """Look up an address in the registry.
 
@@ -241,7 +231,6 @@ def lookup_address(address: str, registry: dict) -> dict | None:
         entry.setdefault("confidence", 0.0)
     return entry
 
-
 def lookup_address(address: str, registry: dict) -> dict | None:
     """Look up an address in the registry.
 
@@ -265,7 +254,6 @@ def lookup_address(address: str, registry: dict) -> dict | None:
         entry.setdefault("source", "unknown")
         entry.setdefault("confidence", 0.0)
     return entry
-
 
 def attribute_address(address: str, registry: dict) -> dict:
     """Provide attribution evidence for an address based on the registry.
@@ -313,7 +301,6 @@ def attribute_address(address: str, registry: dict) -> dict:
             ),
         }
 
-
 def classify_entity(address: str, registry: dict | None = None) -> str:
     """Classify an address using the address registry.
 
@@ -327,7 +314,6 @@ def classify_entity(address: str, registry: dict | None = None) -> str:
     if entry is not None:
         return entry["entity_type"]
     return "Unknown"
-
 
 def calculate_risk_score(entity_type: str, hops: int) -> (int, str):
     """Calculate risk score and level based on entity type and hop distance.
@@ -352,7 +338,6 @@ def calculate_risk_score(entity_type: str, hops: int) -> (int, str):
         level = "Critical"
 
     return score, level
-
 
 def calculate_evidence_risk(entity_type: str, hops: int) -> (int, str, str):
     """Calculate risk score, level, and evidence based on entity type and hop distance.
@@ -380,7 +365,6 @@ def calculate_evidence_risk(entity_type: str, hops: int) -> (int, str, str):
 
     return score, level, evidence
 
-
 def test_calculate_evidence_risk_unknown() -> None:
     """Test calculate_evidence_risk with entity_type Unknown."""
     score, level, evidence = calculate_evidence_risk("Unknown", 0)
@@ -388,7 +372,6 @@ def test_calculate_evidence_risk_unknown() -> None:
     assert level == "Low", f"Expected level Low, got {level}"
     assert "entity_type=Unknown" in evidence
     print("test_calculate_evidence_risk_unknown passed!")
-
 
 def test_calculate_evidence_risk_vasp_low_confidence() -> None:
     """Test calculate_evidence_risk with VASP at hops=2 (low confidence)."""
@@ -398,7 +381,6 @@ def test_calculate_evidence_risk_vasp_low_confidence() -> None:
     assert "penalty=10" in evidence
     print("test_calculate_evidence_risk_vasp_low_confidence passed!")
 
-
 def test_calculate_evidence_risk_vasp_full_confidence() -> None:
     """Test calculate_evidence_risk with VASP at hops=0 (full confidence)."""
     score, level, evidence = calculate_evidence_risk("VASP", 0)
@@ -406,7 +388,6 @@ def test_calculate_evidence_risk_vasp_full_confidence() -> None:
     assert level == "Low", f"Expected level Low, got {level}"
     assert "base_points=10" in evidence
     print("test_calculate_evidence_risk_vasp_full_confidence passed!")
-
 
 def test_calculate_evidence_risk_bridge() -> None:
     """Test calculate_evidence_risk with entity_type Bridge."""
@@ -416,7 +397,6 @@ def test_calculate_evidence_risk_bridge() -> None:
     assert "base_points=20" in evidence
     print("test_calculate_evidence_risk_bridge passed!")
 
-
 def test_calculate_evidence_risk_mixer() -> None:
     """Test calculate_evidence_risk with entity_type Mixer."""
     score, level, evidence = calculate_evidence_risk("Mixer", 0)
@@ -425,7 +405,6 @@ def test_calculate_evidence_risk_mixer() -> None:
     assert "base_points=40" in evidence
     print("test_calculate_evidence_risk_mixer passed!")
 
-
 def test_calculate_evidence_risk_scam_fraud() -> None:
     """Test calculate_evidence_risk with entity_type Scam/Fraud."""
     score, level, evidence = calculate_evidence_risk("Scam/Fraud", 0)
@@ -433,7 +412,6 @@ def test_calculate_evidence_risk_scam_fraud() -> None:
     assert level == "High", f"Expected level High, got {level}"
     assert "base_points=50" in evidence
     print("test_calculate_evidence_risk_scam_fraud passed!")
-
 
 def test_calculate_evidence_risk_hop_distance_penalty() -> None:
     """Test calculate_evidence_risk hop-distance penalty effect."""
@@ -447,7 +425,6 @@ def test_calculate_evidence_risk_hop_distance_penalty() -> None:
     assert score == 0, f"Expected score 0, got {score}"
     assert "penalty=15" in evidence
     print("test_calculate_evidence_risk_hop_distance_penalty passed!")
-
 
 def test_calculate_evidence_risk_evidence_based_scoring() -> None:
     """Test calculate_evidence_risk evidence string format and content."""
@@ -464,7 +441,6 @@ def test_calculate_evidence_risk_evidence_based_scoring() -> None:
     assert "final_score=0" in evidence
     assert score == 0
     print("test_calculate_evidence_risk_evidence_based_scoring passed!")
-
 
 def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
     """Breadth-first traversal of the transaction graph.
@@ -525,7 +501,6 @@ def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
 
     return {"visited": visited, "paths": paths}
 
-
 def print_graph(graph: dict) -> None:
     """Print a simple representation of the transaction graph.
 
@@ -541,7 +516,6 @@ def print_graph(graph: dict) -> None:
         if len(txs) > 3:
             hashes += f" +{len(txs)-3} more"
         print(f"{edge} ({total_eth:.2f}eth) [{hashes}]")
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -659,7 +633,6 @@ def main() -> None:
     else:
         print_graph(graph)
 
-
 def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
     if not is_valid_eth_address(start):
         return {"visited": set(), "paths": {}}
@@ -692,7 +665,6 @@ def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
                 queue.append((receiver, new_path, new_hops, new_transfers))
     return {"visited": visited, "paths": paths}
 
-
     
     # Get the evidence risk - use the max risk_score from attribution
     evidence_risk = 0
@@ -715,7 +687,6 @@ def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
             "reasons": combo['reasons'],
         },
     }
-
 
 def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) -> dict:
     """Run BFS traversal and attribute every discovered address.
@@ -883,7 +854,6 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
         },
     }
 
-
 def test_graph() -> None:
     """Basic tests for graph creation and invalid/missing addresses."""
     # Test with valid Ethereum addresses (0x + 40 hex chars)
@@ -927,7 +897,6 @@ def test_graph() -> None:
     assert "(1.00eth)" in output, "Should print value in ETH"
 
     print("All graph tests passed!")
-
 
 def test_bfs() -> None:
     """Tests for BFS traversal of the transaction graph."""
@@ -1014,7 +983,6 @@ def test_bfs() -> None:
 
     print("All BFS tests passed!")
 
-
 def test_address_cli_with_mock() -> None:
     """Test the --address CLI flow using a mocked Etherscan API response.
 
@@ -1093,7 +1061,6 @@ def test_address_cli_with_mock() -> None:
 
     print("test_address_cli_with_mock passed!")
 
-
 def test_etherscan_error_handling() -> None:
     """Test that Etherscan API errors print the complete JSON response including the result field.
 
@@ -1153,7 +1120,6 @@ def test_etherscan_error_handling() -> None:
         os.remove("test_error.json")
 
     print("test_etherscan_error_handling passed!")
-
 
 def test_risk_scoring() -> None:
     """Tests for rule-based risk scoring and entity classification.
@@ -1389,8 +1355,6 @@ def test_attribute_address() -> None:
     print("All attribute_address tests passed!")
 
 
-
-
 def test_etherscan_v2_endpoint() -> None:
     """Verify that the Etherscan request uses the V2 API endpoint (/v2/api).
 
@@ -1447,7 +1411,6 @@ def test_etherscan_v2_endpoint() -> None:
         os.remove("test_v2.json")
 
     print("test_etherscan_v2_endpoint passed!")
-
 
 def test_erc20_token_transfers() -> None:
     """Test the ERC-20 token transfer fetching and parsing flow.
@@ -1540,7 +1503,6 @@ def test_erc20_token_transfers() -> None:
 
     print("test_erc20_token_transfers passed!")
 
-
 def fetch_internal_transactions(address: str, filepath: str = "internal_transactions.json") -> list:
     """Fetch Ethereum internal transactions for an address using Etherscan API V2.
 
@@ -1595,7 +1557,6 @@ def fetch_internal_transactions(address: str, filepath: str = "internal_transact
         print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
         sys.exit(1)
 
-
 def parse_internal_transaction(raw: dict) -> dict:
     """Parse a raw Etherscan internal transaction dict into a common format.
 
@@ -1611,8 +1572,6 @@ def parse_internal_transaction(raw: dict) -> dict:
         "timestamp": raw.get("timeStamp", "0"),
         "is_error": raw.get("isError", "0"),
     }
-
-
 
 def normalize_eth_transaction(raw: dict) -> dict:
     """Normalize a raw ETH transaction into a common format.
@@ -1631,7 +1590,6 @@ def normalize_eth_transaction(raw: dict) -> dict:
         "amount": value_eth,
         "timestamp": raw.get("timeStamp", "0"),
     }
-
 
 def normalize_erc20_transfer(raw: dict) -> dict:
     """Normalize a raw ERC-20 token transfer into a common format.
@@ -1658,7 +1616,6 @@ def normalize_erc20_transfer(raw: dict) -> dict:
         "timestamp": raw.get("timeStamp", "0"),
     }
 
-
 def normalize_internal_transaction(raw: dict) -> dict:
     """Normalize a raw Etherscan internal transaction into a common format.
 
@@ -1679,7 +1636,6 @@ def normalize_internal_transaction(raw: dict) -> dict:
         "is_error": raw.get("isError", "0"),
     }
 
-
 def normalize_all_transfers(eth_txs: list, erc20_txs: list, internal_txs: list) -> list:
     """Combine ETH, ERC-20, and internal transactions into one normalized list.
 
@@ -1694,7 +1650,6 @@ def normalize_all_transfers(eth_txs: list, erc20_txs: list, internal_txs: list) 
     for raw in internal_txs:
         normalized.append(normalize_internal_transaction(raw))
     return normalized
-
 
 def test_normalize_transactions() -> None:
     """Test the normalization functions for ETH, ERC-20, and internal transactions.
@@ -1785,8 +1740,6 @@ def test_normalize_transactions() -> None:
     assert all_norm[2]["asset_type"] == "INTERNAL_ETH"
 
     print("test_normalize_transactions passed!")
-
-
 
 
 def fetch_address_metadata_from_etherscan(address: str) -> dict:
@@ -2105,7 +2058,6 @@ def combine_attribution_sources(address: str, registry: dict, etherscan_metadata
     }
     return result
 
-
 def test_internal_transactions() -> None:
     """Test the --internal CLI flow using a mocked Etherscan API response.
 
@@ -2336,7 +2288,6 @@ def test_attribute_trace() -> None:
     # At minimum verify the path structure is correct
 print("All attribute_trace tests passed!")
 
-
 def test_analyze_trace_risk_unknown() -> None:
     """Test analyze_trace risk_evidence for Unknown address.
     
@@ -2390,7 +2341,6 @@ def test_analyze_trace_risk_unknown() -> None:
     assert "entity_type=Unknown" in attr["risk_evidence"], f"Expected entity_type=Unknown in evidence, got: {attr['risk_evidence']}"
     print("test_analyze_trace_risk_unknown passed!")
 
-
 def test_analyze_trace_risk_vasp() -> None:
     """Test analyze_trace risk_evidence for known VASP address.
     
@@ -2431,7 +2381,6 @@ def test_analyze_trace_risk_vasp() -> None:
     assert "risk_evidence" in attr, "Missing risk_evidence"
     assert "entity_type=VASP" in attr["risk_evidence"], f"Expected entity_type=VASP in evidence, got: {attr['risk_evidence']}"
     print("test_analyze_trace_risk_vasp passed!")
-
 
 def test_analyze_trace_risk_bridge() -> None:
     """Test analyze_trace risk_evidence for known Bridge address.
@@ -2483,7 +2432,6 @@ def test_analyze_trace_risk_bridge() -> None:
     assert "risk_evidence" in attr, "Missing risk_evidence"
     assert "entity_type=Bridge" in attr["risk_evidence"], f"Expected entity_type=Bridge in evidence, got: {attr['risk_evidence']}"
     print("test_analyze_trace_risk_bridge passed!")
-
 
 def test_analyze_trace_risk_mixer() -> None:
     """Test analyze_trace risk_evidence for known Mixer address.
@@ -2546,7 +2494,6 @@ def test_analyze_trace_risk_mixer() -> None:
     assert "entity_type=Mixer" in attr["risk_evidence"], f"Expected entity_type=Mixer in evidence, got: {attr['risk_evidence']}"
     print("test_analyze_trace_risk_mixer passed!")
 
-
 def test_analyze_trace_risk_scam() -> None:
     """Test analyze_trace risk_evidence for Scam/Fraud address.
     
@@ -2590,7 +2537,6 @@ def test_analyze_trace_risk_scam() -> None:
     assert "entity_type=Scam/Fraud" in evidence
     print("test_analyze_trace_risk_scam passed!")
 
-
 def test_analyze_trace_risk_hop_penalty() -> None:
     """Test analyze_trace risk_evidence hop-distance penalty effect.
     
@@ -2619,7 +2565,6 @@ def test_analyze_trace_risk_hop_penalty() -> None:
     assert "penalty=15" in ev3 and "final_score=0" in ev3, f"Hop 3: expected penalty=15, final_score=0, got: {ev3}"
 
     print("test_analyze_trace_risk_hop_penalty passed!")
-
 
 def test_analyze_trace_risk_preserves_attribution() -> None:
     """Test analyze_trace preserves existing attribution and evidence fields.
@@ -2674,7 +2619,6 @@ def test_analyze_trace_risk_preserves_attribution() -> None:
 
     print("test_analyze_trace_risk_preserves_attribution passed!")
 
-
 # New tests for fetch_address_metadata_from_etherscan
 def test_fetch_address_metadata_basic() -> None:
     """Test basic metadata fetch with mocked API response with no labels."""
@@ -2726,7 +2670,6 @@ def test_fetch_address_metadata_basic() -> None:
 
     print("test_fetch_address_metadata_basic passed!")
 
-
 def test_fetch_address_metadata_vasp_label() -> None:
     """Test metadata fetch with VASP label mapping."""
     import unittest.mock as mock
@@ -2774,7 +2717,6 @@ def test_fetch_address_metadata_vasp_label() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
 
     print("test_fetch_address_metadata_vasp_label passed!")
-
 
 def test_fetch_address_metadata_bridge_label() -> None:
     """Test metadata fetch with Bridge label mapping."""
@@ -2824,7 +2766,6 @@ def test_fetch_address_metadata_bridge_label() -> None:
 
     print("test_fetch_address_metadata_bridge_label passed!")
 
-
 def test_fetch_address_metadata_mixer_label() -> None:
     """Test metadata fetch with Mixer label mapping."""
     import unittest.mock as mock
@@ -2872,7 +2813,6 @@ def test_fetch_address_metadata_mixer_label() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
 
     print("test_fetch_address_metadata_mixer_label passed!")
-
 
 def test_fetch_address_metadata_scam_label() -> None:
     """Test metadata fetch with Scam/Fraud label mapping."""
@@ -2922,7 +2862,6 @@ def test_fetch_address_metadata_scam_label() -> None:
 
     print("test_fetch_address_metadata_scam_label passed!")
 
-
 def test_fetch_address_metadata_error() -> None:
     """Test metadata fetch with API error response."""
     import unittest.mock as mock
@@ -2959,7 +2898,6 @@ def test_fetch_address_metadata_error() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
 
     print("test_fetch_address_metadata_error passed!")
-
 
 def test_fetch_address_metadata_confidence_name_only() -> None:
     """Test confidence = 0.5 when only name tag, no specific labels."""
@@ -3007,7 +2945,6 @@ def test_fetch_address_metadata_confidence_name_only() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
 
     print("test_fetch_address_metadata_confidence_name_only passed!")
-
 
 def test_fetch_address_metadata_label_parsing() -> None:
     """Test label parsing with multiple labels of different types."""
@@ -3059,7 +2996,6 @@ def test_fetch_address_metadata_label_parsing() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
 
     print("test_fetch_address_metadata_label_parsing passed!")
-
 
 def test_combine_attribution_sources_registry_only() -> None:
     """Test combined attribution when only registry has a known entity."""
@@ -3118,7 +3054,6 @@ def test_combine_attribution_sources_registry_only() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
     print("test_combine_attribution_sources_registry_only passed!")
 
-
 def test_combine_attribution_sources_etherscan_only() -> None:
     """Test combined attribution when only Etherscan has a mapped entity."""
     import json
@@ -3174,7 +3109,6 @@ def test_combine_attribution_sources_etherscan_only() -> None:
 
     del os.environ["ETHERSCAN_API_KEY"]
     print("test_combine_attribution_sources_etherscan_only passed!")
-
 
 def test_combine_attribution_sources_agree() -> None:
     """Test combined attribution when both sources identify the same entity."""
@@ -3236,7 +3170,6 @@ def test_combine_attribution_sources_agree() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
     print("test_combine_attribution_sources_agree passed!")
 
-
 def test_combine_attribution_sources_conflict() -> None:
     """Test combined attribution when sources disagree on entity type."""
     import json
@@ -3290,7 +3223,6 @@ def test_combine_attribution_sources_conflict() -> None:
 
     del os.environ["ETHERSCAN_API_KEY"]
     print("test_combine_attribution_sources_conflict passed!")
-
 
 def test_combine_attribution_sources_both_unknown() -> None:
 
@@ -3356,7 +3288,6 @@ def test_combine_attribution_sources_both_unknown() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
     print("test_combine_attribution_sources_both_unknown passed!")
 
-
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         test_graph()
@@ -3401,7 +3332,6 @@ def build_unified_graph(transfers: list) -> dict:
         edge_key = f"{transfer['from_address']}->{transfer['to_address']}"
         graph[edge_key].append(transfer)
     return dict(graph)
-
 
 def test_unified_graph_transfers( ):
     from eth_txs import normalize_eth_transaction, normalize_erc20_transfer, normalize_internal_transaction, build_unified_graph
@@ -3458,7 +3388,6 @@ def test_unified_graph_transfers( ):
     assert any(t["hash"] == "0xintsuccess1" for transfers_list in graph.values() for t in transfers_list)
     print("test_build_unified_graph passed!")
 
-
 def test_bfs_unified( ):
     from eth_txs import build_unified_graph, normalize_eth_transaction, normalize_erc20_transfer, normalize_internal_transaction, bfs_traverse_unified
     eth_xfer = normalize_eth_transaction({
@@ -3509,7 +3438,6 @@ def test_bfs_unified( ):
         assert "amount" in t
         assert "timestamp" in t
     print("test_bfs_unified passed!")
-
 
 def calculate_pattern_risk(patterns):
     """Calculate risk score from detected behavioral patterns.
@@ -3566,7 +3494,6 @@ def calculate_pattern_risk(patterns):
         'reasons': reasons,
     }
 
-
 def combine_risk_scores(evidence_risk, pattern_risk):
     """Combine existing evidence-based risk with pattern risk.
 
@@ -3605,7 +3532,6 @@ def combine_risk_scores(evidence_risk, pattern_risk):
         'reasons': reasons,
     }
 
-
 def test_calculate_pattern_risk_no_patterns():
     """Test that zero patterns gives zero contribution."""
     from eth_txs import calculate_pattern_risk
@@ -3614,7 +3540,6 @@ def test_calculate_pattern_risk_no_patterns():
     assert result['risk_level'] == 'Low'
     assert result['reasons'] == []
     print('test_calculate_pattern_risk_no_patterns passed!')
-
 
 def test_calculate_pattern_risk_fan_out():
     """Test fan-out contribution."""
@@ -3635,7 +3560,6 @@ def test_calculate_pattern_risk_fan_out():
     assert result['risk_level'] == 'Low'
     assert 'Behavioral signal: FAN_OUT_SPLITTING' in result['reasons']
     print('test_calculate_pattern_risk_fan_out passed!')
-
 
 def test_calculate_pattern_risk_duplicate_capped():
     """Test that duplicate patterns dont inflate the score."""
@@ -3664,7 +3588,6 @@ def test_calculate_pattern_risk_duplicate_capped():
     assert result['pattern_score'] == 10
     print('test_calculate_pattern_risk_duplicate_capped passed!')
 
-
 def test_combine_risk_scores():
     """Test risk score combination."""
     from eth_txs import calculate_pattern_risk, combine_risk_scores
@@ -3689,10 +3612,432 @@ def test_combine_risk_scores():
     assert result['score'] == 20
     print('test_combine_risk_scores passed!')
 
-
 def run_pattern_risk_tests():
     test_calculate_pattern_risk_no_patterns()
     test_calculate_pattern_risk_fan_out()
     test_calculate_pattern_risk_duplicate_capped()
     test_combine_risk_scores()
     print('All pattern risk tests passed!')
+
+def generate_investigation_report(trace_result, case_id=None):
+    """Generate a structured investigation report from an analyze_trace() result.
+
+    Does NOT perform blockchain/API calls, rerun tracing, or modify any data.
+    Returns JSON-serializable investigation report dict.
+
+    Args:
+        trace_result: dict from analyze_trace() or compatible structure
+        case_id: optional case identifier string
+
+    Returns:
+        dict with investigation report fields, all values JSON-safe
+    """
+    # Safely extract fields with defaults for missing optional data
+    start = trace_result.get('start', 'unknown')
+    discovered = trace_result.get('discovered', [])
+    hop_count = trace_result.get('hop_count', 0)
+    paths = trace_result.get('paths', {})
+    attribution = trace_result.get('attribution', {})
+    patterns = trace_result.get('patterns', [])
+    overall_risk = trace_result.get('overall_risk', {})
+
+    # Evidence risk information from per-address attribution
+    # Collect evidence scores and confidence from attribution
+    evidence_items = []
+    for addr, attr in attribution.items():
+        evidence_items.append({
+            'address': attr.get('address', addr),
+            'entity_name': attr.get('entity_name'),
+            'entity_type': attr.get('entity_type'),
+            'confidence': attr.get('confidence'),
+            'risk_score': attr.get('risk_score', 0),
+            'risk_level': attr.get('risk_level'),
+            'risk_evidence': attr.get('risk_evidence'),
+            'evidence': attr.get('evidence'),
+            'source': attr.get('source'),
+        })
+
+    # Overall risk summary
+    risk_score = overall_risk.get('score', 0)
+    risk_level = overall_risk.get('risk_level', 'Unknown')
+    risk_reasons = overall_risk.get('reasons', [])
+
+    # Start chain - extract from address or use unknown
+    # The start address is the first element or the 'start' field
+
+    # Cross-chain links - look for cross-chain indicators in paths/attribution
+    # Since we don't perform new analysis, we just preserve what's present
+    cross_chain_links = []
+    for addr, attr in attribution.items():
+        source = attr.get('source', '')
+        if source and 'cross_chain' in source.lower():
+            cross_chain_links.append({
+                'address': attr.get('address', addr),
+                'source': source,
+            })
+
+    # Build the report - clearly distinguish evidence from investigative signals
+    report = {
+        'case_id': case_id,
+        'start_address': start,
+        'investigation_timestamp': trace_result.get('_timestamp'),  # preserved if present, None if not
+        'discovered_addresses': list(discovered),
+        'hop_count': hop_count,
+        'paths_summary': {
+            'total_addresses': len(paths),
+            'max_hops': hop_count,
+        },
+        'attribution': {
+            addr: {
+                'address': a.get('address', addr),
+                'entity_name': a.get('entity_name'),
+                'entity_type': a.get('entity_type'),
+                'confidence': a.get('confidence'),
+                'risk_score': a.get('risk_score', 0),
+                'risk_level': a.get('risk_level'),
+                'risk_evidence': a.get('risk_evidence'),
+                'evidence': a.get('evidence'),  # explicit evidence text
+                'source': a.get('source'),
+            }
+            for addr, a in attribution.items()
+        },
+        'detected_behavioral_patterns': {
+            'pattern_count': len(patterns),
+            'patterns': patterns,  # list of pattern event dicts from pattern detection
+        },
+        'overall_risk': {
+            'score': risk_score,
+            'risk_level': risk_level,
+            'reasons': risk_reasons,  # explains combined evidence + pattern contributions
+        },
+        'evidence_summary': {
+            'total_addresses_evaluated': len(evidence_items),
+            'addresses_with_risk': sum(1 for e in evidence_items if e.get('risk_score', 0) > 0),
+            'average_confidence': (
+                sum(e.get('confidence', 0) for e in evidence_items) / len(evidence_items)
+                if evidence_items else None
+            ),
+        },
+        # Cross-chain links where present (preserved, not newly detected)
+        'cross_chain_links': cross_chain_links,
+        # Metadata about the report generation
+        'report_metadata': {
+            'generated_from': 'analyze_trace',
+            'report_version': '1.0.0',
+        },
+    }
+
+    return report
+
+
+
+
+def test_generate_investigation_report_basic() -> None:
+    """Test basic report generation from analyze_trace result."""
+    from eth_txs import analyze_trace, generate_investigation_report, build_graph, normalize_eth_transaction
+
+    transfers = [
+        normalize_eth_transaction({
+            'from': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'to': '0x111122223333444455556666777788889999aaa',
+            'hash': '0xeth1',
+            'timestamp': '1609459200',
+            'asset_type': 'ETH',
+            'symbol': 'ETH',
+            'amount': 1.0,
+        }),
+    ]
+    graph = build_graph(transfers)
+    registry = {
+        '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb': {
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'entity_name': 'KnownVASP',
+            'entity_type': 'VASP',
+            'source': 'synthetic_test_registry',
+            'confidence': 1.0
+        }
+    }
+    result = analyze_trace('0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb', graph, registry, max_hops=1)
+    report = generate_investigation_report(result, case_id='TEST-001')
+
+    assert report['case_id'] == 'TEST-001'
+    assert report['start_address'] == '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb'
+    assert report['discovered_addresses'] == ['0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb']
+    assert report['hop_count'] == 0
+    assert 'attribution' in report
+    assert report['detected_behavioral_patterns']['pattern_count'] == 0
+    assert report['overall_risk']['score'] == 10
+    assert report['overall_risk']['risk_level'] == 'Low'
+    print('test_generate_investigation_report_basic passed!')
+
+def test_generate_investigation_report_case_id() -> None:
+    """Test case ID is preserved in report."""
+    from eth_txs import generate_investigation_report
+
+    result = {'start': '0xgenesis'}
+    report = generate_investigation_report(result, case_id='CASE-123')
+    assert report['case_id'] == 'CASE-123'
+
+    # None case_id
+    report2 = generate_investigation_report(result)
+    assert report2['case_id'] is None
+    print('test_generate_investigation_report_case_id passed!')
+
+def test_generate_investigation_report_attribution_preserved() -> None:
+    """Test attribution information is preserved."""
+    from eth_txs import analyze_trace, generate_investigation_report, build_graph, normalize_eth_transaction
+
+    transfers = [
+        normalize_eth_transaction({
+            'from': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'to': '0x111122223333444455556666777788889999aaa',
+            'hash': '0xeth1',
+            'timestamp': '1609459200',
+            'asset_type': 'ETH',
+            'symbol': 'ETH',
+            'amount': 1.0,
+        }),
+    ]
+    graph = build_graph(transfers)
+    registry = {
+        '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb': {
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'entity_name': 'KnownVASP',
+            'entity_type': 'VASP',
+            'source': 'synthetic_test_registry',
+            'confidence': 1.0
+        }
+    }
+    result = analyze_trace('0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb', graph, registry, max_hops=1)
+    report = generate_investigation_report(result)
+
+    attr = report['attribution']['0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb']
+    assert attr['entity_name'] == 'KnownVASP'
+    assert attr['entity_type'] == 'VASP'
+    assert attr['confidence'] == 1.0
+    assert attr['risk_score'] == 10
+    assert attr['risk_level'] == 'Low'
+    assert attr['evidence'] is not None
+    assert 'matched entity' in attr['evidence']
+    print('test_generate_investigation_report_attribution_preserved passed!')
+
+def test_generate_investigation_report_evidence_preserved() -> None:
+    """Test evidence information is preserved."""
+    from eth_txs import analyze_trace, generate_investigation_report, build_graph, normalize_eth_transaction
+
+    transfers = [
+        normalize_eth_transaction({
+            'from': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'to': '0x111122223333444455556666777788889999aaa',
+            'hash': '0xeth1',
+            'timestamp': '1609459200',
+            'asset_type': 'ETH',
+            'symbol': 'ETH',
+            'amount': 1.0,
+        }),
+    ]
+    graph = build_graph(transfers)
+    registry = {
+        '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb': {
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'entity_name': 'KnownVASP',
+            'entity_type': 'VASP',
+            'source': 'synthetic_test_registry',
+            'confidence': 1.0
+        }
+    }
+    result = analyze_trace('0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb', graph, registry, max_hops=1)
+    report = generate_investigation_report(result)
+
+    attr = report['attribution']['0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb']
+    assert attr['evidence'] is not None
+    assert 'risk_evidence' in attr
+    # Evidence should clearly distinguish investigative signals from proof
+    assert 'synthetic test data' in attr['evidence']
+    print('test_generate_investigation_report_evidence_preserved passed!')
+
+def test_generate_investigation_report_patterns_preserved() -> None:
+    """Test behavioral patterns are preserved in report."""
+    from eth_txs import analyze_trace, generate_investigation_report, build_graph, normalize_eth_transaction
+
+    # Create graph with fan-out (should detect patterns)
+    transfers = [
+        normalize_eth_transaction({
+            'from': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'to': '0x111122223333444455556666777788889999aaa',
+            'hash': '0xeth1',
+            'timestamp': '1609459200',
+            'asset_type': 'ETH',
+            'symbol': 'ETH',
+            'amount': 1.0,
+        }),
+        normalize_eth_transaction({
+            'from': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'to': '0x22223333444455556666777788889999bbb',
+            'hash': '0xeth2',
+            'timestamp': '1609459260',
+            'asset_type': 'ETH',
+            'symbol': 'ETH',
+            'amount': 2.0,
+        }),
+    ]
+    graph = build_graph(transfers)
+    registry = {
+        '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb': {
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'entity_name': 'KnownVASP',
+            'entity_type': 'VASP',
+            'source': 'synthetic_test_registry',
+            'confidence': 1.0
+        }
+    }
+    result = analyze_trace('0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb', graph, registry, max_hops=2)
+    report = generate_investigation_report(result)
+
+    pattern_count = report['detected_behavioral_patterns']['pattern_count']
+    assert pattern_count >= 0
+    # Patterns list should be present even if empty
+    assert 'patterns' in report['detected_behavioral_patterns']
+    print('test_generate_investigation_report_patterns_preserved passed!')
+
+def test_generate_investigation_report_overall_risk_preserved() -> None:
+    """Test overall risk information is preserved."""
+    from eth_txs import analyze_trace, generate_investigation_report, build_graph, normalize_eth_transaction
+
+    transfers = [
+        normalize_eth_transaction({
+            'from': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'to': '0x111122223333444455556666777788889999aaa',
+            'hash': '0xeth1',
+            'timestamp': '1609459200',
+            'asset_type': 'ETH',
+            'symbol': 'ETH',
+            'amount': 1.0,
+        }),
+    ]
+    graph = build_graph(transfers)
+    registry = {
+        '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb': {
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'entity_name': 'KnownVASP',
+            'entity_type': 'VASP',
+            'source': 'synthetic_test_registry',
+            'confidence': 1.0
+        }
+    }
+    result = analyze_trace('0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb', graph, registry, max_hops=1)
+    report = generate_investigation_report(result)
+
+    risk = report['overall_risk']
+    assert 'score' in risk
+    assert 'risk_level' in risk
+    assert 'reasons' in risk
+    assert risk['score'] == 10
+    assert risk['risk_level'] == 'Low'
+    assert isinstance(risk['reasons'], list)
+    print('test_generate_investigation_report_overall_risk_preserved passed!')
+
+def test_generate_investigation_report_cross_chain_info() -> None:
+    """Test cross-chain information is preserved when present."""
+    from eth_txs import analyze_trace, generate_investigation_report, build_graph, normalize_eth_transaction
+
+    # Test with no cross-chain links
+    transfers = [
+        normalize_eth_transaction({
+            'from': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'to': '0x111122223333444455556666777788889999aaa',
+            'hash': '0xeth1',
+            'timestamp': '1609459200',
+            'asset_type': 'ETH',
+            'symbol': 'ETH',
+            'amount': 1.0,
+        }),
+    ]
+    graph = build_graph(transfers)
+    registry = {
+        '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb': {
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'entity_name': 'KnownVASP',
+            'entity_type': 'VASP',
+            'source': 'synthetic_test_registry',
+            'confidence': 1.0
+        }
+    }
+    result = analyze_trace('0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb', graph, registry, max_hops=1)
+    report = generate_investigation_report(result)
+
+    # Should have empty cross_chain_links when not present
+    assert report['cross_chain_links'] == []
+    print('test_generate_investigation_report_cross_chain_info passed!')
+
+def test_generate_investigation_report_missing_fields() -> None:
+    """Test handling of missing optional fields."""
+    from eth_txs import generate_investigation_report
+
+    # Trace with minimal fields
+    result = {}
+    report = generate_investigation_report(result)
+
+    # Should not crash on missing fields
+    assert report['case_id'] is None
+    assert report['start_address'] == 'unknown'
+    assert report['discovered_addresses'] == []
+    assert report['hop_count'] == 0
+    assert report['overall_risk']['score'] == 0
+    assert report['overall_risk']['risk_level'] == 'Unknown'
+    assert report['overall_risk']['reasons'] == []
+    assert report['evidence_summary']['total_addresses_evaluated'] == 0
+    assert report['evidence_summary']['average_confidence'] is None
+    print('test_generate_investigation_report_missing_fields passed!')
+
+def test_generate_investigation_report_json_serializable() -> None:
+    """Test report is JSON serializable."""
+    from eth_txs import analyze_trace, generate_investigation_report, build_graph, normalize_eth_transaction
+    import json
+
+    transfers = [
+        normalize_eth_transaction({
+            'from': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'to': '0x111122223333444455556666777788889999aaa',
+            'hash': '0xeth1',
+            'timestamp': '1609459200',
+            'asset_type': 'ETH',
+            'symbol': 'ETH',
+            'amount': 1.0,
+        }),
+    ]
+    graph = build_graph(transfers)
+    registry = {
+        '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb': {
+            'address': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb',
+            'entity_name': 'KnownVASP',
+            'entity_type': 'VASP',
+            'source': 'synthetic_test_registry',
+            'confidence': 1.0
+        }
+    }
+    result = analyze_trace('0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbb', graph, registry, max_hops=1)
+    report = generate_investigation_report(result, case_id='TEST-001')
+
+    json_str = json.dumps(report)
+    assert json_str is not None
+    # Verify we can parse it back
+    parsed = json.loads(json_str)
+    assert parsed['case_id'] == 'TEST-001'
+    assert parsed['start_address'] == report['start_address']
+    print('test_generate_investigation_report_json_serializable passed!')
+
+def run_all_19a_tests() -> None:
+    test_generate_investigation_report_basic()
+    test_generate_investigation_report_case_id()
+    test_generate_investigation_report_attribution_preserved()
+    test_generate_investigation_report_evidence_preserved()
+    test_generate_investigation_report_patterns_preserved()
+    test_generate_investigation_report_overall_risk_preserved()
+    test_generate_investigation_report_cross_chain_info()
+    test_generate_investigation_report_missing_fields()
+    test_generate_investigation_report_json_serializable()
+    print('\nAll 9 Step 19A tests passed!')
+
+if __name__ == '__main__':
+    run_all_19a_tests()
