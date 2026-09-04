@@ -4041,3 +4041,125 @@ def run_all_19a_tests() -> None:
 
 if __name__ == '__main__':
     run_all_19a_tests()
+
+def export_report_json(report, output_path):
+    import os
+    import json
+    parent = os.path.dirname(output_path)
+    if parent and not os.path.exists(parent):
+        os.makedirs(parent, exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    return output_path
+
+
+def export_report_text(report, output_path):
+    import os
+    lines = []
+    lines.append('=' * 60)
+    lines.append('INVESTIGATION REPORT')
+    lines.append('=' * 60)
+    lines.append('')
+    lines.append('Case ID: {}'.format(report.get('case_id', 'N/A')))
+    lines.append('')
+    lines.append('-' * 40)
+    lines.append('STARTING ADDRESS')
+    lines.append('-' * 40)
+    lines.append('Address: {}'.format(report.get('start_address', 'N/A')))
+    lines.append('')
+    lines.append('-' * 40)
+    lines.append('DISCOVERED ADDRESSES')
+    lines.append('-' * 40)
+    discovered = report.get('discovered_addresses', [])
+    if discovered:
+        for addr in discovered:
+            lines.append('  - {}'.format(addr))
+    else:
+        lines.append('  (no addresses discovered)')
+    lines.append('')
+    lines.append('-' * 40)
+    lines.append('HOP SUMMARY')
+    lines.append('-' * 40)
+    hop_summary = report.get('paths_summary', {})
+    lines.append('Total addresses evaluated: {}'.format(hop_summary.get('total_addresses_evaluated', 'N/A')))
+    lines.append('Maximum hops reached: {}'.format(hop_summary.get('max_hops', 'N/A')))
+    lines.append('')
+    lines.append('-' * 40)
+    lines.append('ATTRIBUTION')
+    lines.append('-' * 40)
+    attribution = report.get('attribution', {})
+    if attribution:
+        for addr, attr in attribution.items():
+            lines.append('Address: {}'.format(attr.get('address', addr)))
+            lines.append('  Entity: {}'.format(attr.get('entity_name', 'N/A')))
+            lines.append('  Type: {}'.format(attr.get('entity_type', 'N/A')))
+            lines.append('  Confidence: {}'.format(attr.get('confidence', 'N/A')))
+            lines.append('  Risk Score: {}'.format(attr.get('risk_score', 0)))
+            lines.append('  Risk Level: {}'.format(attr.get('risk_level', 'N/A')))
+            evidence = attr.get('evidence', 'N/A')
+            lines.append('  Evidence: {}'.format(evidence[:80] + '...' if len(evidence) > 80 else '  Evidence: {}'.format(evidence)))
+    else:
+        lines.append('  (no attribution data)')
+    lines.append('')
+    lines.append('-' * 40)
+    lines.append('BEHAVIORAL PATTERNS (Investigative Signals)')
+    lines.append('-' * 40)
+    patterns = report.get('detected_behavioral_patterns', {})
+    pattern_count = patterns.get('pattern_count', 0)
+    lines.append('Pattern count: {}'.format(pattern_count))
+    patterns_list = patterns.get('patterns', [])
+    if patterns_list:
+        for i, p in enumerate(patternsList[:5]):
+            pt = p.get('pattern_type', 'unknown')
+            lines.append('  {}: {}'.format(i + 1, pt))
+        if len(patternsList) > 5:
+            lines.append('  ... and {} more patterns'.format(len(patternsList) - 5))
+    else:
+        lines.append('  (no behavioral patterns detected)')
+    lines.append('')
+    lines.append('  * Patterns are investigative signals, not proof of')
+    lines.append('    criminal activity.')
+    lines.append('-' * 40)
+    lines.append('OVERALL RISK (Investigative Assessment)')
+    lines.append('-' * 40)
+    overall_risk = report.get('overall_risk', {})
+    risk_score = overall_risk.get('score', 0)
+    risk_level = overall_risk.get('risk_level', 'Unknown')
+    risk_reasons = overall_risk.get('reasons', [])
+    lines.append('Risk Score: {}'.format(risk_score))
+    lines.append('Risk Level: {}'.format(risk_level))
+    lines.append('Risk Reasons:')
+    for reason in risk_reasons:
+        lines.append('  - {}'.format(reason))
+    lines.append('')
+    lines.append('  * Risk assessment is investigative, not evidence')
+    lines.append('    of criminal conduct.')
+    lines.append('-' * 40)
+    lines.append('EVIDENCE SUMMARY')
+    lines.append('-' * 40)
+    evidence_summary = report.get('evidence_summary', {})
+    lines.append('Addresses evaluated: {}'.format(evidence_summary.get('total_addresses_evaluated', 'N/A')))
+    lines.append('Addresses with risk score > 0: {}'.format(evidence_summary.get('addresses_with_risk', 'N/A')))
+    avg_conf = evidence_summary.get('average_confidence')
+    lines.append('Average confidence: {}'.format(avg_conf if avg_conf is not None else 'N/A'))
+    lines.append('')
+    lines.append('-' * 40)
+    lines.append('CROSS-CHAIN LINKS')
+    lines.append('-' * 40)
+    cross_chain = report.get('cross_chain_links', [])
+    if cross_chain:
+        for link in cross_chain:
+            lines.append('  - Address: {}'.format(link.get('address', 'N/A')))
+            lines.append('    Source: {}'.format(link.get('source', 'N/A')))
+    else:
+        lines.append('  (no cross-chain links detected)')
+    lines.append('')
+    lines.append('=' * 60)
+    lines.append('END OF REPORT')
+    lines.append('=' * 60)
+    parent = os.path.dirname(output_path)
+    if parent and not os.path.exists(parent):
+        os.makedirs(parent, exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+    return output_path
