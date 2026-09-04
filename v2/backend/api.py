@@ -69,7 +69,7 @@ def lookup_address(address: str):
     if not address or len(address) < 10:
         raise HTTPException(status_code=400, detail="Invalid Ethereum address format.")
 
-    registry = eth_txs.load_address_registry()
+    registry = eth_txs.load_address_registry('address_registry.json')
     registry_attr = eth_txs.attribute_address(address, registry)
     
     # Etherscan metadata lookup
@@ -91,36 +91,75 @@ def trace_address(req: TraceRequest):
     """
     Execute full multi-hop BFS trace, entity attribution, evidence-based risk scoring,
     and behavioral pattern detection on a target address.
+    
+    When use_etherscan=true, fetches live Ethereum transaction data from Etherscan API.
+    When use_etherscan=false, falls back to local transaction files if present.
     """
-    address = req.target_address.strip()
+    address = req.target_address.strip().lower()
     if not address:
         raise HTTPException(status_code=400, detail="Target address cannot be empty.")
-
+    
+    # Validate Ethereum address format
+    if not eth_txs.is_valid_eth_address(address):
+        raise HTTPException(status_code=400, detail="Invalid Ethereum address format.")
+    
+    # Check for Etherscan API key if live fetching requested
+    etherscan_key = os.getenv("ETHERSCAN_API_KEY", "")
+    use_live = req.use_etherscan and bool(etherscan_key)
+    
     try:
-        # Load registry
-        registry = eth_txs.load_address_registry()
+        # Load registry (local synthetic registry always available)
+        registry = eth_txs.load_address_registry('address_registry.json')
         
-        # Load or fetch graph transactions
-        # If transaction files exist in directory, build unified graph
-        tx_data = eth_txs.load_transactions("transaction.json") if os.path.exists("transaction.json") else []
-        erc20_data = eth_txs.load_transactions("token_transfers.json") if os.path.exists("token_transfers.json") else []
-        internal_data = eth_txs.load_transactions("internal_transactions.json") if os.path.exists("internal_transactions.json") else []
-
-        normalized = eth_txs.normalize_all_transactions(tx_data, erc20_data, internal_data)
-        graph = eth_txs.build_unified_graph(normalized)
-
-        # Run BFS Trace & Trace-level risk analysis
-        trace_results = eth_txs.analyze_trace_risk(address, graph, registry, max_hops=req.max_hops)
-
-        # Run behavioral pattern analysis
+        if use_live:
+            # --- LIVE ETHEREUM FETCH PHASE ---
+            # Fetch native ETH transactions from Etherscan V2 API
+            eth_txs_data = eth_txs.fetch_transactions_from_etherscan(address, "transaction.json")
+            
+            # Fetch ERC-20 token transfers from Etherscan API
+            erc20_txs = eth_txs.fetch_erc20_token_transfers(address, "token_transfers.json")
+            
+            # Fetch internal transactions (requires Etherscan API key for full functionality)
+            # Use internal transaction fetch only if we have the key
+            if etherscan_key:
+                try:
+                    internal_txs = eth_txs.fetch_internal_transactions(address, "internal_transactions.json")
+                except Exception:
+                    # If internal fetch fails, continue without them
+                    internal_txs = []
+            else:
+                internal_txs = []
+            
+            # Normalize all transaction types into consistent format
+            normalized = eth_txs.normalize_all_transfers(eth_txs_data, erc20_txs, internal_txs)
+            
+            # Build unified graph from normalized transfers
+            graph = eth_txs.build_unified_graph(normalized)
+            
+            # Run BFS Trace & Trace-level risk analysis
+            trace_results = eth_txs.analyze_trace(address, graph, registry, max_hops=req.max_hops)
+            
+        else:
+            # --- LOCAL/SYNTHETIC MODE ---
+            # Load existing transaction files from disk if present
+            tx_data = eth_txs.load_transactions("transaction.json") if os.path.exists("transaction.json") else []
+            erc20_data = eth_txs.load_transactions("token_transfers.json") if os.path.exists("token_transfers.json") else []
+            internal_data = eth_txs.load_transactions("internal_transactions.json") if os.path.exists("internal_transactions.json") else []
+            
+            normalized = eth_txs.normalize_all_transfers(tx_data, erc20_data, internal_data)
+            graph = eth_txs.build_unified_graph(normalized)
+            trace_results = eth_txs.analyze_trace(address, graph, registry, max_hops=req.max_hops)
+        
+        # Run behavioral pattern analysis (works on any graph)
         patterns = pattern_detector.detect_all_patterns(graph, trace_results)
-
+        
         # Generate report preview
         json_report = report_generator.generate_json_report(address, trace_results, patterns)
-
+        
         return {
             "target_address": address,
             "max_hops": req.max_hops,
+            "live_data": use_live,
             "graph": graph,
             "trace_results": trace_results,
             "patterns": patterns,

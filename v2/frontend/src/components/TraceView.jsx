@@ -6,7 +6,7 @@ import AddressDrawer from './AddressDrawer';
 import { fetchAddressTrace } from '../services/api';
 import { shortenAddress } from '../utils/formatters';
 
-export default function TraceView({ targetAddress: initialAddress, onAddressChange }) {
+export default function TraceView({ targetAddress: initialAddress, onAddressChange, onTraceComplete }) {
   const [targetAddress, setTargetAddress] = useState(initialAddress || '0x71C7656EC7ab88b098defB751B7401B5f6d8976F');
   const [maxHops, setMaxHops] = useState(3);
   const [useEtherscan, setUseEtherscan] = useState(false);
@@ -36,6 +36,9 @@ export default function TraceView({ targetAddress: initialAddress, onAddressChan
         const discovered = res.data.trace_results?.discovered_addresses || [];
         const targetNode = discovered.find(n => n.address.toLowerCase() === addr.toLowerCase()) || discovered[0];
         setSelectedNode(targetNode || null);
+        if (typeof onTraceComplete === 'function') {
+          onTraceComplete(res.data, Boolean(res.isLive));
+        }
       }
     } catch (err) {
       setErrorMsg(`Failed to execute trace: ${err.message}`);

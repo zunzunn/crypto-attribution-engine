@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import DashboardView from './components/DashboardView';
 import TraceView from './components/TraceView';
@@ -11,6 +11,8 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [targetAddress, setTargetAddress] = useState('0x71C7656EC7ab88b098defB751B7401B5f6d8976F');
   const [apiLive, setApiLive] = useState(false);
+  const [lastTraceResponse, setLastTraceResponse] = useState(null);
+  const [lastTraceIsLive, setLastTraceIsLive] = useState(false);
 
   useEffect(() => {
     checkHealth();
@@ -31,9 +33,14 @@ export default function App() {
     setCurrentTab('trace');
   };
 
+  const handleTraceComplete = useCallback((traceResponse, isLive) => {
+    setLastTraceResponse(traceResponse);
+    setLastTraceIsLive(isLive);
+  }, []);
+
   return (
     <div className="relative min-h-screen text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden">
-      
+
       {/* Realtime 3D Interactive WebGL Cyberspace Background Canvas */}
       <CyberBackground3D />
 
@@ -48,13 +55,18 @@ export default function App() {
       {/* Main Forensic Content Area */}
       <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
         {currentTab === 'dashboard' && (
-          <DashboardView onSelectCase={handleSelectCase} />
+          <DashboardView
+            onSelectCase={handleSelectCase}
+            lastTraceResponse={lastTraceResponse}
+            apiLive={lastTraceIsLive}
+          />
         )}
 
         {currentTab === 'trace' && (
           <TraceView
             targetAddress={targetAddress}
             onAddressChange={(addr) => setTargetAddress(addr)}
+            onTraceComplete={handleTraceComplete}
           />
         )}
 
