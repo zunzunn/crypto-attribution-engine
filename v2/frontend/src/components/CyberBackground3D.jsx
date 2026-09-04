@@ -178,14 +178,14 @@ export default function CyberBackground3D() {
             linePositions[lineVertexIndex++] = posArray[j * 3 + 1];
             linePositions[lineVertexIndex++] = posArray[j * 3 + 2];
 
-            const intensity = alpha * 0.35;
-            lineColors[colorVertexIndex++] = 0.0 * intensity;
-            lineColors[colorVertexIndex++] = 0.94 * intensity; // cyan glow
-            lineColors[colorVertexIndex++] = 1.0 * intensity;
+            const intensity = alpha * 0.18;
+            lineColors[colorVertexIndex++] = 0;
+            lineColors[colorVertexIndex++] = 0.8 * intensity;
+            lineColors[colorVertexIndex++] = 0.9 * intensity;
 
-            lineColors[colorVertexIndex++] = 0.0 * intensity;
-            lineColors[colorVertexIndex++] = 0.94 * intensity;
-            lineColors[colorVertexIndex++] = 1.0 * intensity;
+            lineColors[colorVertexIndex++] = 0;
+            lineColors[colorVertexIndex++] = 0.8 * intensity;
+            lineColors[colorVertexIndex++] = 0.9 * intensity;
           }
         }
       }

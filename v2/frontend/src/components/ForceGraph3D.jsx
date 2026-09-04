@@ -368,7 +368,9 @@ export default function ForceGraph3DComponent({ traceData, selectedNode, onSelec
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
-      try { Graph.pauseAnimation && Graph.pauseAnimation(); } catch (_) {}
+      if (Graph && typeof Graph.pauseAnimation === 'function') {
+        try { Graph.pauseAnimation(); } catch (_) {}
+      }
       container.innerHTML = '';
       graphRef.current = null;
     };

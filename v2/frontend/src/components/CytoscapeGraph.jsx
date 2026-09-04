@@ -1,203 +1,17 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import cytoscape from 'cytoscape';
-import { ZoomIn, ZoomOut, RefreshCw, Crosshair } from 'lucide-react';
-import { shortenAddress, formatAmount } from '../utils/formatters';
+import GraphToolbar from './investigation/GraphToolbar';
+import { shortenAddress, formatAmount, getEntityColor } from '../utils/formatters';
 
-const TARGET_NODE_SIZE = 70;
-const OTHER_NODE_SIZE = 36;
-const MIN_H_SPACING = 120;
-const MIN_V_SPACING = 100;
-const LAYER_GAP = 70;
-const PADDING = 80;
+const TARGET_NODE_SIZE = 72;
+const OTHER_NODE_SIZE = 38;
+const MIN_H_SPACING = 130;
+const MIN_V_SPACING = 110;
+const LAYER_GAP = 75;
+const PADDING = 90;
 const MIN_ZOOM = 0.12;
-const MAX_ZOOM = 3;
+const MAX_ZOOM = 3.5;
 
-const ENTITY_COLOR = (type) => {
-  const t = (type || 'Unknown').toUpperCase();
-  if (t.includes('MIXER')) return '#ef4444';
-  if (t.includes('VASP') || t.includes('EXCHANGE')) return '#3b82f6';
-  if (t.includes('BRIDGE')) return '#f59e0b';
-  if (t.includes('SCAM') || t.includes('FRAUD')) return '#a855f7';
-  return '#64748b';
-};
-
-function shortenNodeLabel(node) {
-  if (!node) return '';
-  if (node.entity && node.entity !== 'Unknown') return node.entity;
-  const a = node.address || '';
-  if (!a.startsWith('0x')) return shortenAddress(a, 6, 4);
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
-}
-
-const getNodeInfo = (addr) => {
-    const lower = addr.toLowerCase();
-    if (nodeMap.has(lower)) {
-      const info = nodeMap.get(lower);
-      // Preserve all attribution fields from backend; fall back to defaults.
-      return {
-        address: info.address || addr,
-        entity: info.entity_name || 'Unknown',
-        entity_type: info.entity_type || 'Unknown',
-        hop_distance: info.hop_distance ?? 0,
-        risk: {
-          score: info.risk_score ?? 0,
-          risk_level: info.risk_level ?? 'Low',
-        },
-        confidence: info.confidence ?? 0,
-        attribution_source: info.attribution_source ?? [],
-        evidence: info.evidence || '',
-        risk_reasons: info.risk_reasons ?? [],
-      };
-    }
-    return {
-      address: addr,
-      entity: 'Unknown',
-      entity_type: 'Unknown',
-      hop_distance: 0,
-      risk: { score: 0, risk_level: 'Low' },
-      confidence: 0,
-      attribution_source: [],
-      evidence: '',
-      risk_reasons: [],
-    };
-  };
-
-function formatAttribution(node) {
-  const parts = [];
-  if (node.entity_name && node.entity_name !== 'Unknown') parts.push(`Entity: ${node.entity_name}`);
-  if (node.entity_type && node.entity_type !== 'Unknown') parts.push(`Type: ${node.entity_type}`);
-  if (node.confidence !== undefined && node.confidence !== null) parts.push(`Confidence: ${Number(node.confidence).toFixed(2)}`);
-  if (node.attribution_source && node.attribution_source.length > 0) parts.push(`Sources: ${node.attribution_source.join(', ')}`);
-  if (node.evidence) parts.push(`Evidence: ${node.evidence}`);
-  if (node.risk_score !== undefined && node.risk_level) parts.push(`Risk: ${node.risk_score} (${node.risk_level})`);
-  if (node.risk_reasons && node.risk_reasons.length > 0) parts.push(`Reasons: ${node.risk_reasons.join('; ')}`);
-  return parts.filter(p => p).join(' | ');
-}
-
-function buildElements(traceData) {
-  const elements = [];
-  const nodeMap = new Map();
-  const targetLower = (traceData.target_address || '').toLowerCase();
-
-  const discoveredList = traceData.trace_results?.discovered_addresses || [];
-  discoveredList.forEach((nodeInfo) => {
-    if (nodeInfo?.address) nodeMap.set(nodeInfo.address.toLowerCase(), nodeInfo);
-  });
-
-  const getNodeInfo = (addr) => {
-    const lower = addr.toLowerCase();
-    if (nodeMap.has(lower)) return nodeMap.get(lower);
-    return {
-      address: addr,
-      entity: 'Unknown',
-      entity_type: 'Unknown',
-      hop_distance: 0,
-      risk: { score: 0, risk_level: 'Low' },
-    };
-  };
-
-  const addedNodeIds = new Set();
-  const ensureNode = (addr) => {
-    const lower = (addr || '').toLowerCase();
-    if (!lower) return null;
-    if (addedNodeIds.has(lower)) return lower;
-    addedNodeIds.add(lower);
-
-    const info = getNodeInfo(addr);
-    const isTarget = lower === targetLower;
-    const entityType = info.entity_type || 'Unknown';
-    const hop = info.hop_distance ?? 0;
-
-    elements.push({
-      group: 'nodes',
-      data: {
-        id: lower,
-        label: isTarget ? '★ TARGET ★' : formatAttribution(info),
-        fullAddress: addr,
-        entity: info.entity,
-        entityType: entityType,
-        hopDistance: hop,
-        riskScore: info.risk?.score ?? 0,
-        riskLevel: info.risk?.risk_level ?? 'Low',
-        confidence: info.confidence ?? 0,
-        attributionSource: info.attribution_source ?? [],
-        evidence: info.evidence ?? '',
-        riskReasons: info.risk_reasons ?? [],
-        isTarget,
-        info,
-      },
-      classes: isTarget ? 'isTarget' : '',
-    });
-    return lower;
-  };
-
-  const edgeAgg = new Map();
-  Object.entries(traceData.graph || {}).forEach(([sourceAddr, txList]) => {
-    const sourceId = ensureNode(sourceAddr);
-    if (!sourceId) return;
-    (txList || []).forEach((tx) => {
-      const toAddr = tx?.to;
-      if (!toAddr) return;
-      const targetId = ensureNode(toAddr);
-      if (!targetId || sourceId === targetId) return;
-
-      const key = `${sourceId}->${targetId}`;
-      let entry = edgeAgg.get(key);
-      if (!entry) {
-        entry = {
-          id: key,
-          source: sourceId,
-          target: targetId,
-          txCount: 0,
-          totalAmount: 0,
-          representativeAmount: 0,
-          representativeAsset: 'ETH',
-          assets: new Set(),
-          hashes: [],
-          largestAmount: 0,
-        };
-        edgeAgg.set(key, entry);
-      }
-      const amt = parseFloat(tx.amount);
-      if (Number.isFinite(amt) && amt > 0) {
-        entry.totalAmount += amt;
-        if (amt > entry.largestAmount) {
-          entry.largestAmount = amt;
-          entry.representativeAmount = amt;
-          entry.representativeAsset = tx.symbol || tx.asset_type || 'ETH';
-        }
-      }
-      entry.txCount += 1;
-      if (tx.symbol || tx.asset_type) entry.assets.add(tx.symbol || tx.asset_type);
-      if (tx.hash) entry.hashes.push(tx.hash);
-    });
-  });
-
-  edgeAgg.forEach((entry) => {
-    elements.push({
-      group: 'edges',
-      data: {
-        id: entry.id,
-        source: entry.source,
-        target: entry.target,
-        label: entry.txCount > 1
-          ? `${formatAmount(entry.representativeAmount, entry.representativeAsset)} × ${entry.txCount}`
-          : formatAmount(entry.representativeAmount, entry.representativeAsset),
-        txCount: entry.txCount,
-        totalAmount: entry.totalAmount,
-        representativeAmount: entry.representativeAmount,
-        representativeAsset: entry.representativeAsset,
-        assets: Array.from(entry.assets),
-        hashes: entry.hashes.slice(0, 5),
-        hashCount: entry.hashes.length,
-      },
-    });
-  });
-
-  return { elements, targetId: targetLower };
-}
-
-// Directed BFS backwards from the target (following edges toward the target).
 function computeHopDistancesToTarget(elements, targetId) {
   const rev = new Map();
   const nodes = new Set();
@@ -228,7 +42,6 @@ function computeHopDistancesToTarget(elements, targetId) {
   return hops;
 }
 
-// Undirected fallback for nodes the directed BFS couldn't reach.
 function fillUnreachableWithUndirectedHops(elements, hops, targetId) {
   if (!hops.has(targetId)) return hops;
   const maxKnown = Math.max(0, ...Array.from(hops.values()));
@@ -263,7 +76,7 @@ function groupByHop(elements, targetId) {
   const hops = fillUnreachableWithUndirectedHops(
     elements,
     computeHopDistancesToTarget(elements, targetId),
-    targetId,
+    targetId
   );
 
   const out = new Map();
@@ -317,15 +130,10 @@ function computeBBox(positions, elements) {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
-// Deterministic layered layout: target at the origin, each hop placed in
-// clearly separated horizontal bands above and below the target.  Multiple
-// rows are used automatically when a hop has more nodes than fit across the
-// available width.
 function layeredLayoutPositions(elements, targetId, containerDims) {
   const byHop = groupByHop(elements, targetId);
 
   const W = Math.max(containerDims.width || 0, 640);
-  const H = Math.max(containerDims.height || 0, 480);
   const usableW = Math.max(MIN_H_SPACING, W - 2 * PADDING);
 
   const positions = {};
@@ -406,11 +214,159 @@ function fitCamera(cy, container, layoutInfo) {
   cy.pan({ x: W / 2, y: H / 2 });
 }
 
-export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }) {
+function buildElements(traceData) {
+  const elements = [];
+  const nodeMap = new Map();
+  const targetLower = (traceData.target_address || '').toLowerCase();
+
+  const discoveredList = traceData.trace_results?.discovered_addresses || [];
+  discoveredList.forEach((nodeInfo) => {
+    if (nodeInfo?.address) nodeMap.set(nodeInfo.address.toLowerCase(), nodeInfo);
+  });
+
+  const getNodeInfo = (addr) => {
+    const lower = addr.toLowerCase();
+    if (nodeMap.has(lower)) return nodeMap.get(lower);
+    return {
+      address: addr,
+      entity: 'Unknown',
+      entity_type: 'Unknown',
+      hop_distance: 0,
+      risk: { score: 0, risk_level: 'Low' },
+    };
+  };
+
+  const addedNodeIds = new Set();
+  const ensureNode = (addr) => {
+    const lower = (addr || '').toLowerCase();
+    if (!lower) return null;
+    if (addedNodeIds.has(lower)) return lower;
+    addedNodeIds.add(lower);
+
+    const info = getNodeInfo(addr);
+    const isTarget = lower === targetLower;
+    const entityType = info.entity_type || 'Unknown';
+    const hop = info.hop_distance ?? 0;
+    const riskLevel = info.risk?.risk_level || 'Low';
+    const isUnknown = !info.entity || info.entity === 'Unknown';
+
+    let displayLabel = isTarget
+      ? 'TARGET WALLET'
+      : isUnknown
+      ? shortenAddress(addr, 6, 4)
+      : info.entity;
+
+    elements.push({
+      group: 'nodes',
+      data: {
+        id: lower,
+        label: displayLabel,
+        fullAddress: addr,
+        entity: info.entity,
+        entityType: entityType,
+        hopDistance: hop,
+        riskScore: info.risk?.score ?? 0,
+        riskLevel: riskLevel,
+        confidence: info.confidence ?? 0,
+        sources: info.sources || [],
+        evidence: info.evidence ?? '',
+        riskReasons: info.risk?.reasons || [],
+        isTarget,
+        isUnknown,
+        info,
+      },
+      classes: `${isTarget ? 'isTarget' : ''} ${isUnknown ? 'isUnknown' : 'isAttributed'} risk-${riskLevel.toLowerCase()}`,
+    });
+    return lower;
+  };
+
+  const edgeAgg = new Map();
+  Object.entries(traceData.graph || {}).forEach(([sourceAddr, txList]) => {
+    const sourceId = ensureNode(sourceAddr);
+    if (!sourceId) return;
+    (txList || []).forEach((tx) => {
+      const toAddr = tx?.to || tx?.to_address;
+      if (!toAddr) return;
+      const targetId = ensureNode(toAddr);
+      if (!targetId || sourceId === targetId) return;
+
+      const key = `${sourceId}->${targetId}`;
+      let entry = edgeAgg.get(key);
+      if (!entry) {
+        entry = {
+          id: key,
+          source: sourceId,
+          target: targetId,
+          txCount: 0,
+          totalAmount: 0,
+          representativeAmount: 0,
+          representativeAsset: 'ETH',
+          assets: new Set(),
+          hashes: [],
+          largestAmount: 0,
+        };
+        edgeAgg.set(key, entry);
+      }
+      const amt = parseFloat(tx.amount);
+      if (Number.isFinite(amt) && amt > 0) {
+        entry.totalAmount += amt;
+        if (amt > entry.largestAmount) {
+          entry.largestAmount = amt;
+          entry.representativeAmount = amt;
+          entry.representativeAsset = tx.symbol || tx.asset_type || 'ETH';
+        }
+      }
+      entry.txCount += 1;
+      if (tx.symbol || tx.asset_type) entry.assets.add(tx.symbol || tx.asset_type);
+      if (tx.hash) entry.hashes.push(tx.hash);
+    });
+  });
+
+  edgeAgg.forEach((entry) => {
+    const labelText = entry.txCount > 1
+      ? `${formatAmount(entry.representativeAmount, entry.representativeAsset)} (x${entry.txCount})`
+      : formatAmount(entry.representativeAmount, entry.representativeAsset);
+
+    elements.push({
+      group: 'edges',
+      data: {
+        id: entry.id,
+        source: entry.source,
+        target: entry.target,
+        label: labelText,
+        txCount: entry.txCount,
+        totalAmount: entry.totalAmount,
+        representativeAmount: entry.representativeAmount,
+        representativeAsset: entry.representativeAsset,
+        assets: Array.from(entry.assets),
+        hashes: entry.hashes.slice(0, 5),
+        hashCount: entry.hashes.length,
+      },
+    });
+  });
+
+  return { elements, targetId: targetLower };
+}
+
+export default function CytoscapeGraph({
+  traceData,
+  selectedNode,
+  onSelectNode,
+  filterSearch = '',
+  selectedEntities = ['VASP', 'MIXER', 'BRIDGE', 'SCAM', 'UNKNOWN'],
+  selectedRisks = ['Critical', 'High', 'Medium', 'Low'],
+  selectedHops = [0, 1, 2, 3]
+}) {
   const containerRef = useRef(null);
   const cyRef = useRef(null);
   const selectedNodeIdRef = useRef(null);
   const layoutInfoRef = useRef(null);
+  const [showEdgeLabels, setShowEdgeLabels] = useState(false);
+  const onSelectNodeRef = useRef(onSelectNode);
+
+  useEffect(() => {
+    onSelectNodeRef.current = onSelectNode;
+  }, [onSelectNode]);
 
   const applyHighlight = (cy, idOrNull) => {
     if (!cy || cy.destroyed()) return;
@@ -434,16 +390,7 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
     };
 
     const { elements, targetId } = buildElements(traceData);
-    const targetExists = targetId && elements.some(
-      (e) => e.group === 'nodes' && e.data.id === targetId,
-    );
-    if (!targetExists) {
-      // eslint-disable-next-line no-console
-      console.warn('[CytoscapeGraph] target_address not found in trace graph; rendering without a fixed centre.');
-    }
-
     const layoutInfo = layeredLayoutPositions(elements, targetId, dims);
-    layoutInfo.targetId = targetExists ? targetId : null;
     layoutInfoRef.current = layoutInfo;
 
     const cy = cytoscape({
@@ -459,55 +406,93 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
           selector: 'node',
           style: {
             label: 'data(label)',
-            color: '#f8fafc',
+            color: '#cbd5e1',
             'font-size': '10px',
             'font-family': 'monospace',
             'font-weight': 600,
             'text-valign': 'bottom',
             'text-halign': 'center',
-            'text-margin-y': 10,
-            'text-background-opacity': 0.9,
-            'text-background-color': '#0a0e17',
-            'text-background-padding': '4px',
+            'text-margin-y': 7,
+            'text-background-opacity': 0.85,
+            'text-background-color': '#070b14',
+            'text-background-padding': '3px',
             'text-background-shape': 'roundrectangle',
-            'background-color': (node) => ENTITY_COLOR(node.data('entityType')),
+            'background-color': '#1e293b',
             'border-width': 2,
-            'border-color': '#1e293b',
+            'border-color': '#334155',
             width: OTHER_NODE_SIZE,
             height: OTHER_NODE_SIZE,
-            'overlay-opacity': 0,
             'transition-property': 'background-color, border-color, opacity, width, height',
             'transition-duration': '0.2s',
-            'z-index': 1,
+            'z-index': 2,
+          },
+        },
+        {
+          selector: 'node.isAttributed',
+          style: {
+            'background-color': (n) => getEntityColor(n.data('entityType')),
+            'border-width': 2.5,
+            'border-color': '#0f172a',
+          },
+        },
+        {
+          selector: 'node.isUnknown',
+          style: {
+            'background-color': '#0f172a',
+            'border-width': 2,
+            'border-color': '#475569',
+            'border-style': 'dashed',
+            color: '#94a3b8',
+          },
+        },
+        {
+          selector: 'node.risk-critical',
+          style: {
+            'border-color': '#ef4444',
+            'border-width': 3.5,
+            'shadow-blur': 12,
+            'shadow-color': '#ef4444',
+            'shadow-opacity': 0.6,
+          },
+        },
+        {
+          selector: 'node.risk-high',
+          style: {
+            'border-color': '#f43f5e',
+            'border-width': 3,
+            'shadow-blur': 8,
+            'shadow-color': '#f43f5e',
+            'shadow-opacity': 0.5,
+          },
+        },
+        {
+          selector: 'node.risk-medium',
+          style: {
+            'border-color': '#f59e0b',
+            'border-width': 2.5,
           },
         },
         {
           selector: 'node.isTarget',
           style: {
             'background-color': '#00f0ff',
-            'background-blacken': -0.15,
-            'border-color': '#a5f3fc',
+            'border-color': '#ffffff',
             'border-width': 5,
             width: TARGET_NODE_SIZE,
             height: TARGET_NODE_SIZE,
-            'font-size': '13px',
+            'font-size': '12px',
             'font-weight': 'bold',
             color: '#00f0ff',
             'text-valign': 'top',
             'text-halign': 'center',
-            'text-margin-y': -14,
-            'text-background-color': '#0a0e17',
+            'text-margin-y': -12,
+            'text-background-color': '#070b14',
             'text-background-opacity': 1,
-            'text-background-padding': '6px',
+            'text-background-padding': '5px',
             'text-background-shape': 'roundrectangle',
-            'outline-color': '#00f0ff',
-            'outline-width': 3,
-            'outline-opacity': 0.6,
-            'shadow-blur': 30,
+            'shadow-blur': 25,
             'shadow-color': '#00f0ff',
-            'shadow-opacity': 0.95,
-            'shadow-offset-x': 0,
-            'shadow-offset-y': 0,
+            'shadow-opacity': 0.9,
             'z-index': 999,
           },
         },
@@ -526,7 +511,6 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
             'border-width': 0,
             width: 1,
             height: 1,
-            'overlay-opacity': 0,
             'z-index': 0,
             events: 'no',
           },
@@ -534,8 +518,8 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
         {
           selector: 'node.faded',
           style: {
-            opacity: 0.18,
-            'text-opacity': 0.2,
+            opacity: 0.15,
+            'text-opacity': 0.15,
           },
         },
         {
@@ -543,10 +527,10 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
           style: {
             'border-width': 4,
             'border-color': '#00f0ff',
-            'shadow-blur': 14,
+            'shadow-blur': 16,
             'shadow-color': '#00f0ff',
-            'shadow-opacity': 0.95,
-            'z-index': 50,
+            'shadow-opacity': 0.9,
+            'z-index': 80,
           },
         },
         {
@@ -554,7 +538,7 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
           style: {
             'border-width': 4,
             'border-color': '#00f0ff',
-            'shadow-blur': 14,
+            'shadow-blur': 16,
             'shadow-color': '#00f0ff',
             'shadow-opacity': 0.9,
           },
@@ -562,24 +546,30 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
         {
           selector: 'edge',
           style: {
-            width: 1.2,
-            'line-color': '#3b4a63',
-            'target-arrow-color': '#64748b',
+            width: 1.3,
+            'line-color': '#2a3b5c',
+            'target-arrow-color': '#475569',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
-            'control-point-step-size': 24,
             label: '',
             'font-size': '10px',
+            'font-family': 'monospace',
             color: '#e2e8f0',
-            'text-background-opacity': 0.95,
-            'text-background-color': '#0a0e17',
-            'text-background-padding': '4px',
+            'text-background-opacity': 0.9,
+            'text-background-color': '#070b14',
+            'text-background-padding': '3px',
             'text-background-shape': 'roundrectangle',
-            opacity: 0.5,
+            opacity: 0.55,
             'arrow-scale': 0.85,
             'transition-property': 'line-color, target-arrow-color, opacity, width',
             'transition-duration': '0.2s',
             'z-index': 1,
+          },
+        },
+        {
+          selector: 'edge.showLabels',
+          style: {
+            label: 'data(label)',
           },
         },
         {
@@ -594,9 +584,9 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
             label: 'data(label)',
             'line-color': '#00f0ff',
             'target-arrow-color': '#00f0ff',
-            width: 2.6,
+            width: 2.8,
             opacity: 1,
-            'z-index': 60,
+            'z-index': 70,
           },
         },
         {
@@ -605,20 +595,9 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
             label: 'data(label)',
             'line-color': '#00f0ff',
             'target-arrow-color': '#00f0ff',
-            width: 2.2,
+            width: 2.4,
             opacity: 1,
-            'z-index': 60,
-          },
-        },
-        {
-          selector: 'edge:selected, edge.highlighted',
-          style: {
-            label: 'data(label)',
-            'line-color': '#00f0ff',
-            'target-arrow-color': '#00f0ff',
-            width: 2.6,
-            opacity: 1,
-            'z-index': 60,
+            'z-index': 70,
           },
         },
       ],
@@ -629,7 +608,6 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
       positions: layoutInfo.positions,
       animate: true,
       animationDuration: 600,
-      animationEasing: 'ease-out',
       fit: false,
       padding: 0,
     }).run();
@@ -641,20 +619,16 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
       if (targetNode && targetNode.length) targetNode.position({ x: 0, y: 0 });
       fitCamera(cy, containerRef.current, layoutInfoRef.current);
     };
-    [60, 250, 700, 1300].forEach((ms) => setTimeout(frameToContainer, ms));
+
+    [60, 300, 800].forEach((ms) => setTimeout(frameToContainer, ms));
 
     cy.on('tap', 'node', (evt) => {
       const node = evt.target;
       const data = node.data();
+      if (data.isHopLabel) return;
       selectedNodeIdRef.current = data.id;
-      if (onSelectNode) onSelectNode(data.info || { address: data.fullAddress });
+      if (onSelectNodeRef.current) onSelectNodeRef.current(data.info || { address: data.fullAddress });
       applyHighlight(cy, data.id);
-    });
-
-    cy.on('tap', 'edge', (evt) => {
-      const edge = evt.target;
-      cy.elements().unselect();
-      edge.select();
     });
 
     cy.on('mouseover', 'edge', (evt) => {
@@ -663,7 +637,7 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
 
     cy.on('mouseout', 'edge', (evt) => {
       const edge = evt.target;
-      if (!edge.selected()) edge.removeClass('edge-hover');
+      if (!edge.hasClass('edge-hot')) edge.removeClass('edge-hover');
     });
 
     cy.on('tap', (evt) => {
@@ -690,6 +664,7 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
     };
   }, [traceData]);
 
+  // Sync selected node with prop
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || cy.destroyed()) return;
@@ -709,103 +684,147 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
     }
   }, [selectedNode]);
 
-  const handleZoomIn = () => cyRef.current && !cyRef.current.destroyed() &&
-    cyRef.current.zoom({ level: cyRef.current.zoom() * 1.25, renderedPosition: { x: cyRef.current.width() / 2, y: cyRef.current.height() / 2 } });
-  const handleZoomOut = () => cyRef.current && !cyRef.current.destroyed() &&
-    cyRef.current.zoom({ level: cyRef.current.zoom() * 0.8, renderedPosition: { x: cyRef.current.width() / 2, y: cyRef.current.height() / 2 } });
-  const handleFit = () => {
+  // Sync edge labels toggle
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+    if (showEdgeLabels) {
+      cy.edges().addClass('showLabels');
+    } else {
+      cy.edges().removeClass('showLabels');
+    }
+  }, [showEdgeLabels]);
+
+  // Apply filters
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || cy.destroyed()) return;
+
+    cy.nodes().each((node) => {
+      if (node.hasClass('hopLabel') || node.hasClass('isTarget')) return;
+
+      const data = node.data();
+      const entityType = (data.entityType || 'Unknown').toUpperCase();
+      const riskLevel = data.riskLevel || 'Low';
+      const hop = data.hopDistance ?? 0;
+      const addr = (data.fullAddress || '').toLowerCase();
+      const entName = (data.entity || '').toLowerCase();
+
+      // Entity filter match
+      let entityMatch = false;
+      selectedEntities.forEach((cat) => {
+        if (cat === 'UNKNOWN' && (data.isUnknown || entityType === 'UNKNOWN')) entityMatch = true;
+        else if (entityType.includes(cat)) entityMatch = true;
+      });
+
+      // Risk match
+      const riskMatch = selectedRisks.some(
+        (r) => r.toLowerCase() === riskLevel.toLowerCase()
+      );
+
+      // Hop match
+      const hopMatch = selectedHops.includes(hop);
+
+      // Search match
+      const searchMatch = !filterSearch ||
+        addr.includes(filterSearch.toLowerCase()) ||
+        entName.includes(filterSearch.toLowerCase());
+
+      const shouldShow = entityMatch && riskMatch && hopMatch && searchMatch;
+
+      if (shouldShow) {
+        node.style('display', 'element');
+      } else {
+        node.style('display', 'none');
+      }
+    });
+
+    // Hide edges where source or target is hidden
+    cy.edges().each((edge) => {
+      const src = edge.source();
+      const tgt = edge.target();
+      if (src.style('display') === 'none' || tgt.style('display') === 'none') {
+        edge.style('display', 'none');
+      } else {
+        edge.style('display', 'element');
+      }
+    });
+  }, [filterSearch, selectedEntities, selectedRisks, selectedHops]);
+
+  // Toolbar Actions
+  const handleZoomIn = () => {
+    if (!cyRef.current || cyRef.current.destroyed()) return;
+    cyRef.current.zoom({
+      level: cyRef.current.zoom() * 1.25,
+      renderedPosition: { x: cyRef.current.width() / 2, y: cyRef.current.height() / 2 }
+    });
+  };
+
+  const handleZoomOut = () => {
+    if (!cyRef.current || cyRef.current.destroyed()) return;
+    cyRef.current.zoom({
+      level: cyRef.current.zoom() * 0.8,
+      renderedPosition: { x: cyRef.current.width() / 2, y: cyRef.current.height() / 2 }
+    });
+  };
+
+  const handleFitTarget = () => {
     if (!cyRef.current || cyRef.current.destroyed() || !containerRef.current) return;
     fitCamera(cyRef.current, containerRef.current, layoutInfoRef.current);
   };
 
-  const handleAutoArrange = () => {
+  const handleResetLayout = () => {
     const cy = cyRef.current;
     if (!cy || cy.destroyed() || !containerRef.current) return;
     const ref = layoutInfoRef.current;
     if (!ref || !ref.realElements) return;
+
     const dims = {
       width: containerRef.current.clientWidth || 0,
       height: containerRef.current.clientHeight || 0,
     };
     const rebuilt = layeredLayoutPositions(ref.realElements, ref.targetId, dims);
-    rebuilt.targetId = ref.targetId;
     layoutInfoRef.current = rebuilt;
+
     cy.layout({
       name: 'preset',
       positions: rebuilt.positions,
       animate: true,
       animationDuration: 600,
-      animationEasing: 'ease-out',
       fit: false,
       padding: 0,
     }).run();
+
     setTimeout(() => {
       if (!cy.destroyed() && containerRef.current) {
         fitCamera(cy, containerRef.current, layoutInfoRef.current);
       }
-    }, 700);
+    }, 650);
   };
 
-  const handleResetLayout = handleAutoArrange;
-
   return (
-    <div className="relative w-full h-full min-h-[500px] glass-panel rounded-xl overflow-hidden border border-slate-800">
+    <div className="relative w-full h-full min-h-[520px] cyber-panel rounded-xl overflow-hidden border border-slate-800/80">
       <div ref={containerRef} className="cytoscape-container w-full h-full" />
 
-      <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
-        <button
-          onClick={handleZoomIn}
-          title="Zoom In"
-          className="p-2 rounded-lg bg-slate-900/90 text-slate-300 hover:text-cyan-400 border border-slate-700/60 shadow-lg transition"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <button
-          onClick={handleZoomOut}
-          title="Zoom Out"
-          className="p-2 rounded-lg bg-slate-900/90 text-slate-300 hover:text-cyan-400 border border-slate-700/60 shadow-lg transition"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <button
-          onClick={handleFit}
-          title="Centre Target"
-          className="p-2 rounded-lg bg-slate-900/90 text-slate-300 hover:text-cyan-400 border border-slate-700/60 shadow-lg transition"
-        >
-          <Crosshair className="w-4 h-4" />
-        </button>
-        <button
-          onClick={handleAutoArrange}
-          title="Re-layout / Auto Arrange"
-          className="p-2 rounded-lg bg-cyan-500/15 text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/25 border border-cyan-500/40 shadow-lg transition"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
-      </div>
+      {/* Floating Toolbar */}
+      <GraphToolbar
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onFitTarget={handleFitTarget}
+        onResetLayout={handleResetLayout}
+        showEdgeLabels={showEdgeLabels}
+        setShowEdgeLabels={setShowEdgeLabels}
+      />
 
-      <div className="absolute bottom-4 left-4 z-10 glass-card p-3 rounded-lg border border-slate-800 flex flex-col gap-2 text-xs">
-        {/* Live / Local / Mock indicator */}
-        {traceData.live_data === undefined || traceData.live_data === null
-          ? <div className="text-[10px] text-slate-500">LOCAL DATA (fallback)</div>
-          : traceData.live_data
-            ? <div className="text-[10px] text-cyan-400 font-medium">LIVE DATA</div>
-            : <div className="text-[10px] text-slate-500">FALLBACK DATA</div>}
-
-        {/* Live trace statistics when available */}
-        {traceData.live_data_stats && (
-          <div className="text-[10px] text-slate-400 flex items-center gap-2">
-            <span>Fetched: {traceData.live_data_stats.addresses_fetched} addrs, {traceData.live_data_stats.transactions_fetched} txs, {traceData.live_data_stats.hops_processed} hops</span>
-          </div>
-        )}
-
-        {/* Selected node attribution panel */}
-        {selectedNodeIdRef.current && cyRef.current && !cyRef.current.destroyed() && layoutInfoRef.current ? (
-          attributionPanel(cyRef.current, selectedNodeIdRef.current, layoutInfoRef.current)
-        ) : null}
-
-        <div className="text-[10px] text-slate-400 flex items-center gap-2 flex-wrap">
-          <span>Target = exact centre · Hop bands expand outward · Multiple rows per hop when dense · Click a node to highlight its neighbourhood</span>
-        </div>
+      {/* Bottom Status / Navigation Guide */}
+      <div className="absolute bottom-3 left-3 z-10 cyber-panel-subtle px-3 py-1.5 rounded-lg border border-slate-800/80 flex items-center gap-3 text-[10px] font-mono text-slate-400 pointer-events-none">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" /> Target in center
+        </span>
+        <span className="hidden sm:inline">&bull;</span>
+        <span className="hidden sm:inline">Click node to inspect intelligence</span>
+        <span className="hidden sm:inline">&bull;</span>
+        <span className="hidden sm:inline">Scroll to zoom</span>
       </div>
     </div>
   );
