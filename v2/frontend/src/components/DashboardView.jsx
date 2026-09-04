@@ -180,7 +180,133 @@ export default function DashboardView({ onSelectCase, lastTraceResponse, apiLive
 
       </div>
 
-      {/* Recent Case Investigations Table */}
+      {/* Investigation History Section */}
+      <div className="glass-panel rounded-xl border border-slate-800/80 p-5 mb-6">
+        <div className="flex items-center justify-between mb-4 flex-wrap">
+          <div>
+            <h3 className="text-base font-bold text-white">Investigation History</h3>
+            <p className="text-xs text-slate-400">
+              {history.length > 0 ? `${history.length} saved investigation${history.length !== 1 ? 's' : ''}` : 'No investigations yet'}
+            </p>
+          </div>
+          {history.length > 0 && (
+            <button
+              onClick={clearInvestigationHistory}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-sans rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/40 transition shadow-sm"
+              title="Clear all history"
+            >
+              <TrashIcon className="w-3 h-3" />
+              Clear All
+            </button>
+          )}
+        </div>
+        {history.length === 0 ? (
+          <div className="text-center py-8 text-xs text-slate-500 font-mono">No investigations yet</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-800 uppercase font-mono text-[10px]">
+                <tr>
+                  <th className="px-3 py-3">Case ID</th>
+                  <th className="px-3 py-3">Target Address</th>
+                  <th className="px-3 py-3">Risk Level</th>
+                  <th className="px-3 py-3">Addresses</th>
+                  <th className="px-3 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono">
+                {history.map((item) => (
+                  <tr key={item.case_id} className="hover:bg-slate-900/60 transition">
+                    <td className="px-3 py-3 font-semibold text-cyan-400">{item.case_id}</td>
+                    <td className="px-3 py-3 text-slate-200 truncate" title={item.target_address}>
+                      {shortenAddress(item.target_address, 12, 6)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className={`px-2 py-0.5 text-[11px] font-bold rounded border ${getRiskBadgeStyle(item.risk_level)}`}>
+                        {item.risk_level}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-slate-300">{item.discovered_addresses} addresses</td>
+                    <td className="px-3 py-3 text-right">
+                      <button
+                        onClick={() => restoreInvestigation(item)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-sans rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 transition shadow-sm"
+                        title="Restore this investigation"
+                      >
+                        <ArrowUpRight className="w-3 h-3" />
+                        Restore
+                      </button>
+                      <button
+                        onClick={() => removeInvestigation(item.case_id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-sans rounded-lg bg-gray-500/20 text-slate-300 hover:bg-gray-500/30 border border-gray-500/40 transition shadow-sm ml-2"
+                        title="Remove from history"
+                      >
+                        <XMark className="w-3 h-3" />
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+{/* Current Case Investigations Table */}
+      <div className="glass-panel rounded-xl border border-slate-800/80 p-5">
+        <div className="flex items-center justify-between mb-4 flex-wrap">
+          <div>
+            <h3 className="text-base font-bold text-white">Current Case Investigation</h3>
+            <p className="text-xs text-slate-400">
+              {hasTrace
+                ? `Single active investigation${targetAddress ? ` for ${shortenAddress(targetAddress, 8, 6)}` : ''}`
+                : 'No investigation data — run a trace to populate the dashboard'}
+              </p>
+            </div>
+          </div>
+        </div>
+        {hasTrace ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-800 uppercase font-mono text-[10px]">
+                <tr>
+                  <th className="px-4 py-3">Case ID</th>
+                  <th className="px-4 py-3">Target Address</th>
+                  <th className="px-4 py-3">Entity Attribution</th>
+                  <th className="px-4 py-3">Max Hops</th>
+                  <th className="px-4 py-3">Risk Level</th>
+                  <th className="px-4 py-3">Score</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono">
+                {metrics.recent_investigations.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-900/60 transition">
+                    <td className="px-4 py-3 font-bold text-cyan-400">{item.id}</td>
+                    <td className="px-4 py-3 text-slate-200">{shortenAddress(item.address, 10, 6)}</td>
+                    <td className="px-4 py-3 font-sans text-slate-300">{item.entity}</td>
+                    <td className="px-4 py-3 text-slate-400">{item.hops} Hops</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-[11px] font-bold rounded border ${getRiskBadgeStyle(item.risk)}`}>
+                        {item.risk}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-bold text-white">{item.score.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => onSelectCase(item.address)}
+                        className="inline-flex items-center gap-1 px-3 py-1 text-xs font-sans font-medium rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/40 transition shadow-sm"
+                      >
+                        3D Trace <ArrowUpRight className="w-3 h-3" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       <div className="glass-panel rounded-xl border border-slate-800/80 p-5">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
