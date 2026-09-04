@@ -705,22 +705,24 @@ def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
             # these, but BFS must not trust any caller-supplied graph).
             if not is_valid_eth_address(receiver):
                 continue
-            if receiver_norm in visited_norm:
-                # Already visited (possibly same address different case);
-                # merge transfer if present.
-                paths[receiver] = (paths[receiver][0], paths[receiver][1] + [transfer], paths[receiver][2])
+            valid_txs = [
+                t for t in txs
+                if not (t.get("asset_type") == "INTERNAL_ETH" and str(t.get("is_error")) == "1")
+            ]
+            if not valid_txs:
                 continue
-            for transfer in txs:
-                if transfer["asset_type"] == "INTERNAL_ETH" and transfer.get("is_error") == "1":
-                    continue
-                new_path = path + [receiver]
-                new_transfers = transfers + [transfer]
-                new_hops = hops + 1
-                new_visited = visited | {receiver}
-                visited.add(receiver)
-                visited_norm.add(receiver_norm)
-                paths[receiver] = (new_path, new_transfers, new_hops)
-                queue.append((receiver, new_path, new_hops, new_transfers))
+            if receiver_norm in visited_norm:
+                if receiver in paths:
+                    p_path, p_txs, p_hops = paths[receiver]
+                    paths[receiver] = (p_path, p_txs + valid_txs, p_hops)
+                continue
+            new_path = path + [receiver]
+            new_transfers = transfers + valid_txs
+            new_hops = hops + 1
+            visited.add(receiver)
+            visited_norm.add(receiver_norm)
+            paths[receiver] = (new_path, new_transfers, new_hops)
+            queue.append((receiver, new_path, new_hops, new_transfers))
     return {"visited": visited, "paths": paths}
 
     
@@ -807,6 +809,7 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
             "risk_score": risk_score,
             "risk_level": risk_level,
             "risk_evidence": risk_evidence,
+            "hop_distance": hops,
         }
 
     # Collect discovered addresses

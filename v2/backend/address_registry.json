@@ -19,5 +19,61 @@
     "entity_type": "Mixer",
     "source": "synthetic_test_registry",
     "confidence": 1.0
+  },
+  "0x71c7656ec7ab88b098defb751b7401b5f6d8976f": {
+    "address": "0x71c7656ec7ab88b098defb751b7401b5f6d8976f",
+    "entity_name": "Phishing_Drainer_Wallet",
+    "entity_type": "Scam/Fraud",
+    "source": "SIH Cybercrime Portal",
+    "confidence": 0.95
+  },
+  "0x1111111111111111111111111111111111111111": {
+    "address": "0x1111111111111111111111111111111111111111",
+    "entity_name": "TornadoCash_Vault_0.1",
+    "entity_type": "Mixer",
+    "source": "OFAC Sanctions List",
+    "confidence": 1.0
+  },
+  "0x2222222222222222222222222222222222222222": {
+    "address": "0x2222222222222222222222222222222222222222",
+    "entity_name": "Arbitrum_Bridge_L1",
+    "entity_type": "Bridge",
+    "source": "Etherscan Metadata",
+    "confidence": 0.90
+  },
+  "0x3333333333333333333333333333333333333333": {
+    "address": "0x3333333333333333333333333333333333333333",
+    "entity_name": "Binance_Hot_Wallet_14",
+    "entity_type": "VASP",
+    "source": "Binance Official Registry",
+    "confidence": 1.0
+  },
+  "0x4444444444444444444444444444444444444444": {
+    "address": "0x4444444444444444444444444444444444444444",
+    "entity_name": "Intermediary_Mule_Account",
+    "entity_type": "Unknown",
+    "source": "On-chain Cluster Analysis",
+    "confidence": 0.40
+  },
+  "0x5555555555555555555555555555555555555555": {
+    "address": "0x5555555555555555555555555555555555555555",
+    "entity_name": "OKX_Deposit_Wallet",
+    "entity_type": "VASP",
+    "source": "Exchange Public Records",
+    "confidence": 0.95
+  },
+  "0x6666666666666666666666666666666666666666": {
+    "address": "0x6666666666666666666666666666666666666666",
+    "entity_name": "Huobi_Withdrawal_Pool",
+    "entity_type": "VASP",
+    "source": "Exchange Public Records",
+    "confidence": 0.90
+  },
+  "0xd8da6bf26964af9d7eed9e03e53415d37aa96045": {
+    "address": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+    "entity_name": "Vitalik_Buterin_Public",
+    "entity_type": "Unknown",
+    "source": "ENS & Etherscan Verified",
+    "confidence": 0.95
   }
 }

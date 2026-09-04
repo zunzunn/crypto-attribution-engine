@@ -37,8 +37,29 @@ class ReportGenerator:
         timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
         discovered_nodes = trace_results.get("discovered_addresses", [])
-        
-        # Calculate summary metrics
+        if not discovered_nodes and "attribution" in trace_results:
+            attribution = trace_results.get("attribution", {})
+            paths = trace_results.get("paths", {})
+            discovered_nodes = []
+            for addr in trace_results.get("discovered", list(attribution.keys())):
+                info = attribution.get(addr, {})
+                hop = info.get("hop_distance")
+                if hop is None and addr in paths:
+                    hop = paths[addr][2]
+                discovered_nodes.append({
+                    "address": addr,
+                    "entity": info.get("entity_name", "Unknown"),
+                    "entity_type": info.get("entity_type", "Unknown"),
+                    "confidence": info.get("confidence", 0.0),
+                    "sources": [info.get("source")] if info.get("source") else [],
+                    "hop_distance": hop if hop is not None else 0,
+                    "evidence": info.get("evidence", ""),
+                    "risk": {
+                        "score": info.get("risk_score", 0),
+                        "risk_level": info.get("risk_level", "Low"),
+                        "reasons": [info.get("risk_evidence")] if info.get("risk_evidence") else []
+                    }
+                })
         max_hop = 0
         highest_risk = 0.0
         highest_risk_level = "Low"

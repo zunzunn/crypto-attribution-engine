@@ -15,41 +15,49 @@ function normalizeTraceResponse(rawResponse) {
   if (!rawResponse || typeof rawResponse !== 'object') return rawResponse;
   const traceResults = rawResponse.trace_results || {};
   const attribution = traceResults.attribution || {};
-  const discovered = traceResults.discovered || Object.keys(attribution);
 
-  const discoveredAddresses = discovered.map((addr) => {
-    const lower = (addr || '').toLowerCase();
-    const info = attribution[addr] || attribution[lower] || {};
-    return {
-      address: info.address || addr,
-      entity: info.entity_name || 'Unknown',
-      entity_type: info.entity_type || 'Unknown',
-      confidence: info.confidence || 0,
-      sources: info.source ? [info.source] : (info.attribution_source || []),
-      hop_distance: info.hop_distance ?? 0,
-      evidence: info.evidence || '',
-      risk: {
-        score: info.risk_score || 0,
-        risk_level: info.risk_level || 'Low',
-        reasons: info.risk_evidence ? [info.risk_evidence] : (info.risk_reasons || [])
-      }
-    };
-  });
+  let discoveredAddresses = traceResults.discovered_addresses;
+  if (!Array.isArray(discoveredAddresses) || discoveredAddresses.length === 0) {
+    const discovered = traceResults.discovered || Object.keys(attribution);
+    discoveredAddresses = discovered.map((addr) => {
+      const lower = (addr || '').toLowerCase();
+      const info = attribution[addr] || attribution[lower] || {};
+      const hop = traceResults.paths?.[addr]?.[2] ?? info.hop_distance ?? 0;
+      return {
+        address: info.address || addr,
+        entity: info.entity_name || 'Unknown',
+        entity_type: info.entity_type || 'Unknown',
+        confidence: info.confidence || 0,
+        sources: info.source ? [info.source] : (info.attribution_source || []),
+        hop_distance: hop,
+        evidence: info.evidence || '',
+        risk: {
+          score: info.risk_score || 0,
+          risk_level: info.risk_level || 'Low',
+          reasons: info.risk_evidence ? [info.risk_evidence] : (info.risk_reasons || [])
+        }
+      };
+    });
+  }
 
   const normalizedGraph = {};
   const rawGraph = rawResponse.graph || {};
   Object.entries(rawGraph).forEach(([edgeKey, txList]) => {
+    if (!edgeKey.includes('->')) {
+      normalizedGraph[edgeKey] = txList;
+      return;
+    }
     const parts = edgeKey.split('->');
     if (parts.length !== 2) return;
     const [fromAddr, toAddr] = parts;
     normalizedGraph[fromAddr] = (normalizedGraph[fromAddr] || []).concat(
       (txList || []).map((tx) => ({
-        to: tx.to_address || toAddr,
-        amount: tx.amount,
-        asset_type: tx.asset_type,
-        symbol: tx.symbol,
-        hash: tx.hash,
-        timestamp: tx.timestamp
+        to: tx.to_address || tx.to || toAddr,
+        amount: tx.amount ?? tx.value_eth ?? 0,
+        asset_type: tx.asset_type || 'ETH',
+        symbol: tx.symbol || 'ETH',
+        hash: tx.hash || '',
+        timestamp: tx.timestamp || 0
       }))
     );
   });

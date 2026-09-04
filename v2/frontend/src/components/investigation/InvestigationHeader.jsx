@@ -18,7 +18,7 @@ export default function InvestigationHeader({
   overallRisk,
   isLive,
   liveStats,
-  _maxHops,
+  maxHops = 2,
   viewMode,
   setViewMode,
   showFilters,
@@ -48,7 +48,7 @@ export default function InvestigationHeader({
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-cyan-400 font-bold">
               {caseId || 'CASE-2026'}
             </span>
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400">Target Address</span>
+            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400">Target Wallet</span>
           </div>
 
           <div className="flex items-center gap-2 mt-1">
@@ -76,19 +76,27 @@ export default function InvestigationHeader({
 
         {/* Risk Badge Pill */}
         <div className="pl-3 border-l border-slate-800">
-          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block mb-1">Risk Score</span>
+          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block mb-1">Overall Risk</span>
           <RiskBadge level={riskLevel} score={riskScore} size="sm" />
         </div>
 
         {/* Live Data Badge */}
         <div className="pl-3 border-l border-slate-800 hidden sm:block">
-          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block mb-1">Data Source</span>
+          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block mb-1">Data Mode</span>
           <div className="flex items-center gap-1.5 text-xs font-mono">
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-cyan-400 animate-pulse' : 'bg-slate-500'}`} />
             <span className={isLive ? 'text-cyan-300 font-semibold' : 'text-slate-400'}>
-              {isLive ? 'Mainnet Live' : 'Cached Local'}
+              {isLive ? 'Mainnet Live' : 'Offline / Local'}
             </span>
           </div>
+        </div>
+
+        {/* Max Hops Badge */}
+        <div className="pl-3 border-l border-slate-800 hidden md:block">
+          <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block mb-1">BFS Depth</span>
+          <span className="text-xs font-mono font-bold text-cyan-300">
+            {maxHops} Hops
+          </span>
         </div>
 
         {/* Live Stats Pill if available */}

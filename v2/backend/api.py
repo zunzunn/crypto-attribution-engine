@@ -86,14 +86,84 @@ def lookup_address(address: str):
     }
 
 
+DEMO_TRANSFERS = [
+    {
+        "hash": "0xa1b2c3d4e5f67890",
+        "from_address": "0x71c7656ec7ab88b098defb751b7401b5f6d8976f",
+        "to_address": "0x1111111111111111111111111111111111111111",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 45.50,
+        "timestamp": 1725380000,
+        "is_error": "0"
+    },
+    {
+        "hash": "0xb2c3d4e5f67890a1",
+        "from_address": "0x71c7656ec7ab88b098defb751b7401b5f6d8976f",
+        "to_address": "0x2222222222222222222222222222222222222222",
+        "asset_type": "ERC20",
+        "asset_contract": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+        "symbol": "USDT",
+        "amount": 10000.00,
+        "timestamp": 1725380500,
+        "is_error": "0"
+    },
+    {
+        "hash": "0xc3d4e5f67890a1b2",
+        "from_address": "0x71c7656ec7ab88b098defb751b7401b5f6d8976f",
+        "to_address": "0x3333333333333333333333333333333333333333",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 12.00,
+        "timestamp": 1725381000,
+        "is_error": "0"
+    },
+    {
+        "hash": "0xd4e5f67890a1b2c3",
+        "from_address": "0x1111111111111111111111111111111111111111",
+        "to_address": "0x4444444444444444444444444444444444444444",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 45.00,
+        "timestamp": 1725381200,
+        "is_error": "0"
+    },
+    {
+        "hash": "0xe5f67890a1b2c3d4",
+        "from_address": "0x2222222222222222222222222222222222222222",
+        "to_address": "0x5555555555555555555555555555555555555555",
+        "asset_type": "ERC20",
+        "asset_contract": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+        "symbol": "USDT",
+        "amount": 9950.00,
+        "timestamp": 1725381800,
+        "is_error": "0"
+    },
+    {
+        "hash": "0xf67890a1b2c3d4e5",
+        "from_address": "0x4444444444444444444444444444444444444444",
+        "to_address": "0x6666666666666666666666666666666666666666",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 44.20,
+        "timestamp": 1725382500,
+        "is_error": "0"
+    }
+]
+
+
 @app.post("/api/v2/trace")
 def trace_address(req: TraceRequest):
     """
     Execute full multi-hop BFS trace, entity attribution, evidence-based risk scoring,
     and behavioral pattern detection on a target address.
     
-    When use_etherscan=true, fetches live Ethereum transaction data from Etherscan API.
-    When use_etherscan=false, falls back to local transaction files if present.
+    When use_etherscan=true and ETHERSCAN_API_KEY is present, fetches live Ethereum data.
+    When use_etherscan=false, uses local dataset / demo network traces.
     """
     address = req.target_address.strip().lower()
     if not address:
@@ -103,115 +173,136 @@ def trace_address(req: TraceRequest):
     if not eth_txs.is_valid_eth_address(address):
         raise HTTPException(status_code=400, detail="Invalid Ethereum address format.")
     
+    registry = eth_txs.load_address_registry('address_registry.json')
+    
     # Check for Etherscan API key if live fetching requested
     etherscan_key = os.getenv("ETHERSCAN_API_KEY", "")
     use_live = req.use_etherscan and bool(etherscan_key)
     
-    if use_live:
-            # --- RECRUITIVE MULTI-HOP LIVE FETCH PHASE ---
-            # Safety limit: cap total distinct addresses fetched to avoid runaway API calls
-            MAX_ADDRESS_FETCH = 50
-            # Track fetched normalised addresses to avoid duplicate calls
-            fetched_norm = {eth_txs.normalize_eth_address(address)}
-            # Queue of (address, hop_level) tuples; start with target at hop 0
+    addresses_fetched = 0
+    transactions_fetched = 0
+    hops_processed = 0
+    MAX_ADDRESS_FETCH = 50
+
+    try:
+        if use_live:
+            # --- RECURSIVE MULTI-HOP LIVE FETCH PHASE ---
+            fetched_norm = set()
             fetch_queue = [(address, 0)]
-            # Graph built from all fetched transactions; keys are "FROM->TO" with normalised addresses
-            graph = {}
-            # Statistics for the response
-            addresses_fetched = 0
-            transactions_fetched = 0
-            hops_processed = 0
+            all_transfers = []
 
             while fetch_queue and hops_processed < req.max_hops:
-                # Process all addresses queued at the current hop level
                 hop_size = len(fetch_queue)
                 if hop_size == 0:
                     break
+                next_hop_receivers = set()
+
                 for _ in range(hop_size):
                     current, hop_level = fetch_queue.pop(0)
                     cur_norm = eth_txs.normalize_eth_address(current)
-                    # Skip if already fetched (including the target at hop 0)
                     if cur_norm in fetched_norm:
                         continue
-                    # Enforce total address limit
                     if addresses_fetched >= MAX_ADDRESS_FETCH:
                         break
+
                     fetched_norm.add(cur_norm)
                     addresses_fetched += 1
 
-                    # Fetch native ETH transactions for current address
+                    # 1. Fetch native ETH transactions
                     try:
                         eth_txs_data = eth_txs.fetch_transactions_from_etherscan(current, "transaction.json")
-                        transactions_fetched += len(eth_txs_data) if eth_txs_data else 0
                     except Exception:
                         eth_txs_data = []
-                    # Fetch ERC-20 token transfers
+
+                    # 2. Fetch ERC-20 token transfers
                     try:
                         erc20_txs = eth_txs.fetch_erc20_token_transfers(current, "token_transfers.json")
-                        transactions_fetched += len(erc20_txs) if erc20_txs else 0
                     except Exception:
                         erc20_txs = []
-                    # Fetch internal transactions if Etherscan key available
-                    if etherscan_key:
-                        try:
-                            internal_txs = eth_txs.fetch_internal_transactions(current, "internal_transactions.json")
-                            transactions_fetched += len(internal_txs) if internal_txs else 0
-                        except Exception:
-                            internal_txs = []
-                    else:
+
+                    # 3. Fetch internal transactions
+                    try:
+                        internal_txs = eth_txs.fetch_internal_transactions(current, "internal_transactions.json")
+                    except Exception:
                         internal_txs = []
 
-                    # Normalize into consistent format
+                    # 4. Normalize transfers
                     normalized = eth_txs.normalize_all_transfers(eth_txs_data, erc20_txs, internal_txs)
-                    # Add edges to graph (key format "FROM->TO" using normalised addresses)
-                    for tx_cat in normalized.values():
-                        for tx in tx_cat:
-                            f = tx.get('from') or tx.get('from_address') or ''
-                            t = tx.get('to') or tx.get('to_address') or ''
-                            if f and t:
-                                edge_key = f"{eth_txs.normalize_eth_address(f)}->{eth_txs.normalize_eth_address(t)}"
-                                graph.setdefault(edge_key, []).append({
-                                    "hash": tx.get("hash", ""),
-                                    "value_eth": tx.get("value_eth", 0),
-                                    "timestamp": tx.get("timestamp", 0),
-                                })
-                    # Discover new receivers to fetch in the next hop level
-                    # Collect unique normalised receiver addresses from newly added edges
-                    new_receivers = set()
-                    for edge_key, _ in graph.items():
-                        parts = edge_key.split("->")
-                        if len(parts) == 2:
-                            # only consider edges where the sender normalised address matches current
-                            # (simple heuristic: if receiver not yet fetched, add)
-                            r_norm = parts[1]
-                            if r_norm not in fetched_norm:
-                                new_receivers.add(r_norm)
-                    # Queue each new receiver for the next hop level (hop_level + 1)
-                    for r_norm in new_receivers:
-                        # Store the normalised form; original case can be recovered later if needed
-                        fetch_queue.append((r_norm, hop_level + 1))
+                    all_transfers.extend(normalized)
+                    transactions_fetched += len(normalized)
+
+                    # 5. Enqueue outbound recipient addresses for the next hop level
+                    for tx in normalized:
+                        to_addr = tx.get("to_address") or ""
+                        if eth_txs.is_valid_eth_address(to_addr):
+                            to_norm = eth_txs.normalize_eth_address(to_addr)
+                            if to_norm not in fetched_norm and to_norm != cur_norm:
+                                next_hop_receivers.add(to_addr)
+
+                for r in next_hop_receivers:
+                    fetch_queue.append((r, hops_processed + 1))
+
                 hops_processed += 1
 
-            # After the recursive fetch loop, run BFS trace and risk analysis on the full graph
+            graph = eth_txs.build_unified_graph(all_transfers)
             trace_results = eth_txs.analyze_trace(address, graph, registry, max_hops=req.max_hops)
-            
+
         else:
-            # --- LOCAL/SYNTHETIC MODE ---
-            # Load existing transaction files from disk if present
-            tx_data = eth_txs.load_transactions("transaction.json") if os.path.exists("transaction.json") else []
-            erc20_data = eth_txs.load_transactions("token_transfers.json") if os.path.exists("token_transfers.json") else []
-            internal_data = eth_txs.load_transactions("internal_transactions.json") if os.path.exists("internal_transactions.json") else []
-            
-            normalized = eth_txs.normalize_all_transfers(tx_data, erc20_data, internal_data)
-            graph = eth_txs.build_unified_graph(normalized)
+            # --- LOCAL / SYNTHETIC MODE ---
+            # If target address matches canonical demo address, load demo multi-hop trace
+            if address == "0x71c7656ec7ab88b098defb751b7401b5f6d8976f":
+                transfers = DEMO_TRANSFERS
+            else:
+                tx_data = eth_txs.load_transactions("transaction.json") if os.path.exists("transaction.json") else []
+                erc20_data = eth_txs.load_transactions("token_transfers.json") if os.path.exists("token_transfers.json") else []
+                internal_data = eth_txs.load_transactions("internal_transactions.json") if os.path.exists("internal_transactions.json") else []
+                transfers = eth_txs.normalize_all_transfers(tx_data, erc20_data, internal_data)
+
+            graph = eth_txs.build_unified_graph(transfers)
             trace_results = eth_txs.analyze_trace(address, graph, registry, max_hops=req.max_hops)
-        
-        # Run behavioral pattern analysis (works on any graph)
-        patterns = pattern_detector.detect_all_patterns(graph, trace_results)
-        
+
+        # Build structured discovered_addresses array
+        discovered_addresses = []
+        for addr in trace_results.get("discovered", []):
+            info = trace_results.get("attribution", {}).get(addr, {})
+            hop = info.get("hop_distance")
+            if hop is None and addr in trace_results.get("paths", {}):
+                hop = trace_results["paths"][addr][2]
+            sources = [info.get("source")] if info.get("source") else []
+            reasons = [info.get("risk_evidence")] if info.get("risk_evidence") else []
+            discovered_addresses.append({
+                "address": addr,
+                "entity": info.get("entity_name", "Unknown"),
+                "entity_type": info.get("entity_type", "Unknown"),
+                "confidence": float(info.get("confidence", 0.0) or 0.0),
+                "sources": sources,
+                "hop_distance": hop if hop is not None else 0,
+                "evidence": info.get("evidence", ""),
+                "risk": {
+                    "score": float(info.get("risk_score", 0.0) or 0.0),
+                    "risk_level": info.get("risk_level", "Low"),
+                    "reasons": reasons
+                }
+            })
+        trace_results["discovered_addresses"] = discovered_addresses
+
+        # Scope returned graph to only include edges connecting discovered trace nodes
+        discovered_norm_set = {eth_txs.normalize_eth_address(a) for a in trace_results.get("discovered", [])}
+        filtered_graph = {}
+        for edge_key, tx_list in graph.items():
+            parts = edge_key.split("->")
+            if len(parts) == 2:
+                s_norm = eth_txs.normalize_eth_address(parts[0])
+                d_norm = eth_txs.normalize_eth_address(parts[1])
+                if s_norm in discovered_norm_set and d_norm in discovered_norm_set:
+                    filtered_graph[edge_key] = tx_list
+
+        # Run behavioral pattern analysis on filtered graph
+        patterns = pattern_detector.detect_all_patterns(filtered_graph, trace_results)
+
         # Generate report preview
         json_report = report_generator.generate_json_report(address, trace_results, patterns)
-        
+
         return {
             "target_address": address,
             "max_hops": req.max_hops,
@@ -222,7 +313,7 @@ def trace_address(req: TraceRequest):
                 "hops_processed": hops_processed,
                 "address_limit_reached": addresses_fetched >= MAX_ADDRESS_FETCH if use_live else False
             },
-            "graph": graph,
+            "graph": filtered_graph,
             "trace_results": trace_results,
             "patterns": patterns,
             "report_summary": json_report["investigation_summary"]

@@ -146,7 +146,7 @@ export default function InvestigationWorkspace({
       </div>
 
       {/* 3. Main Split Canvas: [Filters] [Graph Canvas] [Address Drawer] */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[640px]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[660px] min-h-[580px]">
         {/* Optional Collapsible Filter Panel */}
         {showFilters && (
           <div className="lg:col-span-3 h-full animate-fade-in">
@@ -167,16 +167,10 @@ export default function InvestigationWorkspace({
           </div>
         )}
 
-        {/* Center Graph Canvas */}
+        {/* Center Hero Graph Canvas (70-75% width when filters closed) */}
         <div
           className={`h-full transition-all duration-300 ${
-            showFilters
-              ? selectedNode
-                ? 'lg:col-span-5'
-                : 'lg:col-span-9'
-              : selectedNode
-              ? 'lg:col-span-8'
-              : 'lg:col-span-12'
+            showFilters ? 'lg:col-span-5' : 'lg:col-span-8 xl:col-span-9'
           }`}
         >
           {viewMode === '2D' ? (
@@ -198,26 +192,24 @@ export default function InvestigationWorkspace({
           )}
         </div>
 
-        {/* Right Address Intelligence Drawer */}
-        {selectedNode && (
-          <div
-            className={`h-full transition-all duration-300 ${
-              showFilters ? 'lg:col-span-4' : 'lg:col-span-4'
-            }`}
-          >
-            <AddressDrawer
-              selectedNode={selectedNode}
-              graphData={traceData.graph}
-              onClose={() => setSelectedNode(null)}
-              onFocusNode={() => {
-                // Address is focused in graph automatically via selectedNode prop
-              }}
-              onTraceAsNewTarget={(addr) => {
-                if (onAddressChange) onAddressChange(addr);
-              }}
-            />
-          </div>
-        )}
+        {/* Right Address Intelligence Drawer (25-30% width) - Always Visible */}
+        <div
+          className={`h-full transition-all duration-300 ${
+            showFilters ? 'lg:col-span-4' : 'lg:col-span-4 xl:col-span-3'
+          }`}
+        >
+          <AddressDrawer
+            selectedNode={selectedNode}
+            graphData={traceData.graph}
+            onClose={() => setSelectedNode(null)}
+            onFocusNode={() => {
+              // Node is automatically selected & focused via selectedNode prop
+            }}
+            onTraceAsNewTarget={(addr) => {
+              if (onAddressChange) onAddressChange(addr);
+            }}
+          />
+        </div>
       </div>
 
       {/* 4. Dedicated Behavioral Intelligence Findings Section */}

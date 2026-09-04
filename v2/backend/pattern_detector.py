@@ -22,10 +22,39 @@ class PatternDetector:
         self.time_threshold_seconds = time_threshold_seconds
         self.min_fan_degree = min_fan_degree
 
+    def _normalize_graph(self, graph: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+        """Convert 'FROM->TO' edge graph to adjacency list {source: [{to, amount, timestamp, hash}]}."""
+        if not graph:
+            return {}
+        sample_key = next(iter(graph.keys()), "")
+        if "->" not in sample_key:
+            return graph
+        
+        adj = defaultdict(list)
+        for edge_key, txs in graph.items():
+            parts = edge_key.split("->")
+            if len(parts) != 2:
+                continue
+            src, dst = parts[0].strip().lower(), parts[1].strip().lower()
+            for tx in txs:
+                adj[src].append({
+                    "to": dst,
+                    "to_address": dst,
+                    "from": src,
+                    "from_address": src,
+                    "amount": float(tx.get("amount", tx.get("value_eth", 0)) or 0),
+                    "hash": tx.get("hash", ""),
+                    "timestamp": tx.get("timestamp", 0),
+                    "asset_type": tx.get("asset_type", "ETH"),
+                    "symbol": tx.get("symbol", "ETH"),
+                })
+        return dict(adj)
+
     def detect_fan_out(self, graph: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Detects addresses sending funds to multiple distinct recipients (Splitting).
         """
+        graph = self._normalize_graph(graph)
         fan_out_events = []
         for source_addr, outgoing_txs in graph.items():
             if not outgoing_txs:
@@ -59,10 +88,11 @@ class PatternDetector:
         """
         Detects addresses receiving funds from multiple distinct senders (Consolidation).
         """
+        graph = self._normalize_graph(graph)
         incoming_map = defaultdict(list)
         for source_addr, outgoing_txs in graph.items():
             for tx in outgoing_txs:
-                to_addr = tx.get("to")
+                to_addr = tx.get("to") or tx.get("to_address")
                 if to_addr:
                     incoming_map[to_addr.lower()].append({
                         "from": source_addr.lower(),
@@ -100,10 +130,11 @@ class PatternDetector:
         Detects sequential transactions along connected paths where timestamp difference
         between hops is under the threshold.
         """
+        graph = self._normalize_graph(graph)
         rapid_hops = []
         for source_addr, outgoing_txs in graph.items():
             for tx in outgoing_txs:
-                next_addr = tx.get("to")
+                next_addr = tx.get("to") or tx.get("to_address")
                 tx1_time = tx.get("timestamp")
                 if not next_addr or tx1_time is None:
                     continue
@@ -122,12 +153,12 @@ class PatternDetector:
                             rapid_hops.append({
                                 "hop_1_from": source_addr,
                                 "intermediate_address": next_addr,
-                                "hop_2_to": next_tx.get("to"),
+                                "hop_2_to": next_tx.get("to") or next_tx.get("to_address"),
                                 "time_delta_seconds": delta,
                                 "tx1_hash": tx.get("hash"),
                                 "tx2_hash": next_tx.get("hash"),
                                 "pattern_type": "RAPID_WALLET_HOPPING",
-                                "description": f"Funds moved through {next_addr} to {next_tx.get('to')} in {int(delta)}s (< {self.time_threshold_seconds}s)."
+                                "description": f"Funds moved through {next_addr} to {next_tx.get('to') or next_tx.get('to_address')} in {int(delta)}s (< {self.time_threshold_seconds}s)."
                             })
                     except (ValueError, TypeError):
                         continue
@@ -142,6 +173,21 @@ class PatternDetector:
             return layering_events
 
         discovered_nodes = trace_results.get("discovered_addresses", [])
+        if not discovered_nodes and "attribution" in trace_results:
+            attribution = trace_results.get("attribution", {})
+            paths = trace_results.get("paths", {})
+            discovered_nodes = []
+            for addr in trace_results.get("discovered", list(attribution.keys())):
+                info = attribution.get(addr, {})
+                hop = info.get("hop_distance")
+                if hop is None and addr in paths:
+                    hop = paths[addr][2]
+                discovered_nodes.append({
+                    "address": addr,
+                    "hop_distance": hop if hop is not None else 0,
+                    "entity": info.get("entity_name", "Unknown"),
+                })
+
         max_hop = 0
         deep_addresses = []
 

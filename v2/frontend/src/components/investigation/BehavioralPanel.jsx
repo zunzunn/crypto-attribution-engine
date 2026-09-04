@@ -20,6 +20,10 @@ export default function BehavioralPanel({ patterns, onSelectAddress }) {
 
   const totalDetected = patternSummary.total_patterns_detected || 0;
 
+  if (totalDetected === 0) {
+    return null;
+  }
+
   return (
     <div className="cyber-panel rounded-xl p-5 border border-slate-800/80 space-y-4">
       {/* Header */}
@@ -45,13 +49,7 @@ export default function BehavioralPanel({ patterns, onSelectAddress }) {
         </div>
       </div>
 
-      {totalDetected === 0 ? (
-        <div className="text-center py-6 text-slate-500 font-mono text-xs flex flex-col items-center justify-center">
-          <Info className="w-6 h-6 opacity-40 mb-1.5" />
-          <span>No obfuscation or rapid transfer anomalies detected in the current trace path.</span>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {/* Fan-Out / Splitting Findings */}
           {fanOutEvents.map((evt, idx) => (
             <div
@@ -252,7 +250,6 @@ export default function BehavioralPanel({ patterns, onSelectAddress }) {
             </div>
           ))}
         </div>
-      )}
     </div>
   );
 }
