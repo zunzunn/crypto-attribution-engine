@@ -22,6 +22,16 @@ def is_valid_eth_address(address: str) -> bool:
     except ValueError:
         return False
 
+def normalize_eth_address(address: str) -> str:
+    """Return a lower‑cased version of an Ethereum address for comparison.
+    If the address is not a valid ETH address, returns the lower‑cased stripped string."""
+    addr = address.strip()
+    if not addr:
+        return ""
+    if addr.startswith("0x") and len(addr) == 42:
+        return addr.lower()
+    return addr.lower()
+
 def load_transactions(path: str = "transaction.json") -> list:
     """Load transactions from a JSON file.
 
@@ -461,6 +471,7 @@ def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
         return {"visited": set(), "paths": {}}
 
     visited = {start}
+    visited_norm = {normalize_eth_address(start)}
     # queue: (current_address, path_so_far, hops_taken)
     queue = [(start, [start], 0)]
     # paths: address -> (path_from_start, edge_transactions_list)
@@ -471,6 +482,8 @@ def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
         if hops >= max_hops:
             continue
 
+        current_norm = normalize_eth_address(current)
+
         # Find all outgoing edges from current address
         for edge_key, txs in graph.items():
             # edge_key format: "FROM->TO"
@@ -479,7 +492,10 @@ def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
                 continue
             sender, receiver = parts[0], parts[1]
 
-            if sender != current:
+            sender_norm = normalize_eth_address(sender)
+            receiver_norm = normalize_eth_address(receiver)
+
+            if sender_norm != current_norm:
                 continue
 
             # Defensive: skip edges with empty/invalid endpoints. These can
@@ -488,19 +504,20 @@ def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
             if not is_valid_eth_address(receiver):
                 continue
 
+            if receiver_norm in visited_norm:
+                continue
+
             for tx in txs:
                 tx_hash = tx["hash"]
                 tx_value = tx["value_eth"]
                 tx_timestamp = tx["timestamp"]
-
-                if receiver in visited:
-                    continue
 
                 new_path = path + [receiver]
                 new_hops = hops + 1
                 new_visited = visited | {receiver}
 
                 visited.add(receiver)
+                visited_norm.add(receiver_norm)
                 paths[receiver] = (new_path, [{"hash": tx_hash, "value_eth": tx_value, "timestamp": tx_timestamp}])
 
                 queue.append((receiver, new_path, new_hops))
@@ -643,35 +660,42 @@ def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
     if not is_valid_eth_address(start):
         return {"visited": set(), "paths": {}}
     visited = {start}
+    visited_norm = {normalize_eth_address(start)}
     queue = [(start, [start], 0, [])]
     paths = {start: ([start], [], 0)}
     while queue:
         current, path, hops, transfers = queue.pop(0)
         if hops >= max_hops:
             continue
+        current_norm = normalize_eth_address(current)
         for edge_key, txs in graph.items():
             parts = edge_key.split("->")
             if len(parts) != 2:
                 continue
             sender, receiver = parts[0], parts[1]
-            if sender != current:
+            sender_norm = normalize_eth_address(sender)
+            receiver_norm = normalize_eth_address(receiver)
+            if sender_norm != current_norm:
                 continue
             # Defensive: skip edges with empty/invalid endpoints (contract
             # creation tx have empty `to`; the unified graph already filters
             # these, but BFS must not trust any caller-supplied graph).
             if not is_valid_eth_address(receiver):
                 continue
+            if receiver_norm in visited_norm:
+                # Already visited (possibly same address different case);
+                # merge transfer if present.
+                paths[receiver] = (paths[receiver][0], paths[receiver][1] + [transfer], paths[receiver][2])
+                continue
             for transfer in txs:
                 if transfer["asset_type"] == "INTERNAL_ETH" and transfer.get("is_error") == "1":
-                    continue
-                if receiver in visited:
-                    paths[receiver] = (paths[receiver][0], paths[receiver][1] + [transfer], paths[receiver][2])
                     continue
                 new_path = path + [receiver]
                 new_transfers = transfers + [transfer]
                 new_hops = hops + 1
                 new_visited = visited | {receiver}
                 visited.add(receiver)
+                visited_norm.add(receiver_norm)
                 paths[receiver] = (new_path, new_transfers, new_hops)
                 queue.append((receiver, new_path, new_hops, new_transfers))
     return {"visited": visited, "paths": paths}
