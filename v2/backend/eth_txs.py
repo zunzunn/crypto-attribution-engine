@@ -265,7 +265,7 @@ def lookup_address(address: str, registry: dict) -> dict | None:
         entry.setdefault("confidence", 0.0)
     return entry
 
-def attribute_address(address: str, registry: dict) -> dict:
+def attribute_address(address: str, registry: dict, hop: int = 0) -> dict:
     """Provide attribution evidence for an address based on the registry.
 
     Returns a structured result containing attribution evidence:
@@ -275,6 +275,10 @@ def attribute_address(address: str, registry: dict) -> dict:
     - source: source from registry or "unknown"
     - confidence: confidence from registry or 0.0
     - evidence: string explaining the match status
+    - attribution_source: list of sources that contributed to the attribution
+    - risk_score: numeric risk score (0-100) based on entity_type and hop distance
+    - risk_level: textual risk level (Low/Medium/High/Critical)
+    - risk_reasons: list of reason strings for the risk score
 
     For a known address in the registry, evidence confirms the registry match.
     For an unknown address, evidence indicates no registry match was found.
@@ -288,6 +292,12 @@ def attribute_address(address: str, registry: dict) -> dict:
             f"with confidence {entry['confidence']}. "
             f"This is synthetic test data; the registry does not represent real intelligence."
         )
+        risk_score, risk_level = calculate_risk_score(entry.get("entity_type", "Unknown"), hop)
+        risk_reasons = [
+            f"entity_type={entry.get('entity_type', 'Unknown')}",
+            f"hops={hop}",
+            f"score={risk_score}",
+        ]
         return {
             "address": entry.get("address", address),
             "entity_name": entry.get("entity_name", "Unknown"),
@@ -295,9 +305,14 @@ def attribute_address(address: str, registry: dict) -> dict:
             "source": entry.get("source", "unknown"),
             "confidence": float(entry.get("confidence", 0.0)),
             "evidence": evidence,
+            "attribution_source": [entry.get("source", "unknown")],
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "risk_reasons": risk_reasons,
         }
     else:
         # Unknown address - no registry match
+        risk_score, risk_level = calculate_risk_score("Unknown", hop)
         return {
             "address": address.strip() if address else "0x00000000000000000000000000000000",
             "entity_name": "Unknown",
@@ -309,6 +324,14 @@ def attribute_address(address: str, registry: dict) -> dict:
                 f"not found in intelligence registry. No match. "
                 f"This is synthetic test data; no real intelligence claims are made."
             ),
+            "attribution_source": ["unknown"],
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "risk_reasons": [
+                f"entity_type=Unknown",
+                f"hops={hop}",
+                f"score={risk_score}",
+            ],
         }
 
 def classify_entity(address: str, registry: dict | None = None) -> str:
