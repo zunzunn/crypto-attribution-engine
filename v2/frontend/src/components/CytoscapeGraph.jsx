@@ -29,6 +29,51 @@ function shortenNodeLabel(node) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
+const getNodeInfo = (addr) => {
+    const lower = addr.toLowerCase();
+    if (nodeMap.has(lower)) {
+      const info = nodeMap.get(lower);
+      // Preserve all attribution fields from backend; fall back to defaults.
+      return {
+        address: info.address || addr,
+        entity: info.entity_name || 'Unknown',
+        entity_type: info.entity_type || 'Unknown',
+        hop_distance: info.hop_distance ?? 0,
+        risk: {
+          score: info.risk_score ?? 0,
+          risk_level: info.risk_level ?? 'Low',
+        },
+        confidence: info.confidence ?? 0,
+        attribution_source: info.attribution_source ?? [],
+        evidence: info.evidence || '',
+        risk_reasons: info.risk_reasons ?? [],
+      };
+    }
+    return {
+      address: addr,
+      entity: 'Unknown',
+      entity_type: 'Unknown',
+      hop_distance: 0,
+      risk: { score: 0, risk_level: 'Low' },
+      confidence: 0,
+      attribution_source: [],
+      evidence: '',
+      risk_reasons: [],
+    };
+  };
+
+function formatAttribution(node) {
+  const parts = [];
+  if (node.entity_name && node.entity_name !== 'Unknown') parts.push(`Entity: ${node.entity_name}`);
+  if (node.entity_type && node.entity_type !== 'Unknown') parts.push(`Type: ${node.entity_type}`);
+  if (node.confidence !== undefined && node.confidence !== null) parts.push(`Confidence: ${Number(node.confidence).toFixed(2)}`);
+  if (node.attribution_source && node.attribution_source.length > 0) parts.push(`Sources: ${node.attribution_source.join(', ')}`);
+  if (node.evidence) parts.push(`Evidence: ${node.evidence}`);
+  if (node.risk_score !== undefined && node.risk_level) parts.push(`Risk: ${node.risk_score} (${node.risk_level})`);
+  if (node.risk_reasons && node.risk_reasons.length > 0) parts.push(`Reasons: ${node.risk_reasons.join('; ')}`);
+  return parts.filter(p => p).join(' | ');
+}
+
 function buildElements(traceData) {
   const elements = [];
   const nodeMap = new Map();
@@ -67,13 +112,17 @@ function buildElements(traceData) {
       group: 'nodes',
       data: {
         id: lower,
-        label: isTarget ? '★ TARGET ★' : shortenNodeLabel(info),
+        label: isTarget ? '★ TARGET ★' : formatAttribution(info),
         fullAddress: addr,
         entity: info.entity,
         entityType: entityType,
         hopDistance: hop,
-        riskScore: info.risk?.score || 0,
-        riskLevel: info.risk?.risk_level || 'Low',
+        riskScore: info.risk?.score ?? 0,
+        riskLevel: info.risk?.risk_level ?? 'Low',
+        confidence: info.confidence ?? 0,
+        attributionSource: info.attribution_source ?? [],
+        evidence: info.evidence ?? '',
+        riskReasons: info.risk_reasons ?? [],
         isTarget,
         info,
       },
@@ -735,18 +784,25 @@ export default function CytoscapeGraph({ traceData, selectedNode, onSelectNode }
       </div>
 
       <div className="absolute bottom-4 left-4 z-10 glass-card p-3 rounded-lg border border-slate-800 flex flex-col gap-2 text-xs">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="font-bold text-cyan-400">Layered Investigation Map</span>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-cyan-400 shadow shadow-cyan-400/60"></span>
-            <span className="text-slate-300">★ Target (centre)</span>
+        {/* Live / Local / Mock indicator */}
+        {traceData.live_data === undefined || traceData.live_data === null
+          ? <div className="text-[10px] text-slate-500">LOCAL DATA (fallback)</div>
+          : traceData.live_data
+            ? <div className="text-[10px] text-cyan-400 font-medium">LIVE DATA</div>
+            : <div className="text-[10px] text-slate-500">FALLBACK DATA</div>}
+
+        {/* Live trace statistics when available */}
+        {traceData.live_data_stats && (
+          <div className="text-[10px] text-slate-400 flex items-center gap-2">
+            <span>Fetched: {traceData.live_data_stats.addresses_fetched} addrs, {traceData.live_data_stats.transactions_fetched} txs, {traceData.live_data_stats.hops_processed} hops</span>
           </div>
-          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500"></span><span className="text-slate-300">Mixer</span></div>
-          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span><span className="text-slate-300">VASP</span></div>
-          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span><span className="text-slate-300">Bridge</span></div>
-          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span><span className="text-slate-300">Scam</span></div>
-          <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-500"></span><span className="text-slate-300">Unknown</span></div>
-        </div>
+        )}
+
+        {/* Selected node attribution panel */}
+        {selectedNodeIdRef.current && cyRef.current && !cyRef.current.destroyed() && layoutInfoRef.current ? (
+          attributionPanel(cyRef.current, selectedNodeIdRef.current, layoutInfoRef.current)
+        ) : null}
+
         <div className="text-[10px] text-slate-400 flex items-center gap-2 flex-wrap">
           <span>Target = exact centre · Hop bands expand outward · Multiple rows per hop when dense · Click a node to highlight its neighbourhood</span>
         </div>
