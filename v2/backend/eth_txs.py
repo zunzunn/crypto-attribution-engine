@@ -482,6 +482,12 @@ def bfs_traverse(graph: dict, start: str, max_hops: int = 3) -> dict:
             if sender != current:
                 continue
 
+            # Defensive: skip edges with empty/invalid endpoints. These can
+            # originate from raw contract-creation transactions or malformed
+            # data and must never be treated as a discovered address.
+            if not is_valid_eth_address(receiver):
+                continue
+
             for tx in txs:
                 tx_hash = tx["hash"]
                 tx_value = tx["value_eth"]
@@ -650,6 +656,11 @@ def bfs_traverse_unified(graph: dict, start: str, max_hops: int = 3) -> dict:
             sender, receiver = parts[0], parts[1]
             if sender != current:
                 continue
+            # Defensive: skip edges with empty/invalid endpoints (contract
+            # creation tx have empty `to`; the unified graph already filters
+            # these, but BFS must not trust any caller-supplied graph).
+            if not is_valid_eth_address(receiver):
+                continue
             for transfer in txs:
                 if transfer["asset_type"] == "INTERNAL_ETH" and transfer.get("is_error") == "1":
                     continue
@@ -709,6 +720,13 @@ def analyze_trace(start: str, graph: dict, registry: dict, max_hops: int = 3) ->
     bfs_result = bfs_traverse_unified(graph, start, max_hops)
     visited = bfs_result["visited"]
     paths = bfs_result["paths"]
+
+    # Defensive: drop any non-address tokens that may have slipped into the
+    # BFS visited set (e.g. empty-string receivers from malformed edges).
+    # Contract-creation transactions produce empty `to` and must never be
+    # promoted to a discovered address.
+    visited = {addr for addr in visited if is_valid_eth_address(addr)}
+    paths = {addr: p for addr, p in paths.items() if is_valid_eth_address(addr)}
 
     # Determine max hops reached
     max_hops_reached = 0
@@ -3288,6 +3306,202 @@ def test_combine_attribution_sources_both_unknown() -> None:
     del os.environ["ETHERSCAN_API_KEY"]
     print("test_combine_attribution_sources_both_unknown passed!")
 
+
+# --- Regression tests: contract-creation / empty destination handling ---
+
+def test_build_unified_graph_skips_empty_to_address() -> None:
+    """Contract-creation txs have an empty `to` and must NOT create
+    a graph edge keyed by an empty receiver. Empty / invalid endpoints
+    are filtered out so they never reach BFS, attribution, patterns or risk.
+    """
+    from eth_txs import (
+        build_unified_graph,
+        normalize_eth_transaction,
+        normalize_erc20_transfer,
+    )
+
+    valid_eth = normalize_eth_transaction({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xvalid_eth",
+        "timestamp": "1609459200",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 1.0,
+    })
+    contract_creation = normalize_eth_transaction({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "",  # contract creation tx -> empty destination
+        "hash": "0xcontract_creation",
+        "timestamp": "1609459201",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 0.5,
+    })
+    erc20_empty_to = normalize_erc20_transfer({
+        "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to": "",  # bad/missing destination
+        "hash": "0xerc20_empty_to",
+        "timestamp": "1609459202",
+        "asset_type": "ERC20",
+        "asset_contract": "0xtoken",
+        "symbol": "USDT",
+        "amount": 100.0,
+    })
+
+    graph = build_unified_graph([valid_eth, contract_creation, erc20_empty_to])
+
+    # Only the valid ETH transfer should appear
+    assert len(graph) == 1, f"Expected exactly 1 edge, got {len(graph)}: {list(graph.keys())}"
+    only_edge = next(iter(graph.keys()))
+    assert only_edge == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert not only_edge.endswith("->"), f"Empty receiver leaked into edge key: {only_edge!r}"
+    assert not only_edge.startswith("->"), f"Empty sender leaked into edge key: {only_edge!r}"
+    for edge_key in graph.keys():
+        parts = edge_key.split("->")
+        assert len(parts) == 2
+        assert parts[0], f"Sender is empty in edge {edge_key!r}"
+        assert parts[1], f"Receiver is empty in edge {edge_key!r}"
+
+    # The contract-creation tx must not have been silently retained
+    all_hashes = [t["hash"] for tx_list in graph.values() for t in tx_list]
+    assert "0xvalid_eth" in all_hashes
+    assert "0xcontract_creation" not in all_hashes
+    assert "0xerc20_empty_to" not in all_hashes
+    print("test_build_unified_graph_skips_empty_to_address passed!")
+
+
+def test_build_unified_graph_skips_empty_from_address() -> None:
+    """A transfer with an empty `from_address` must also be filtered out."""
+    from eth_txs import (
+        build_unified_graph,
+        normalize_eth_transaction,
+    )
+
+    bad_from = normalize_eth_transaction({
+        "from": "",
+        "to": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "hash": "0xbad_from",
+        "timestamp": "1609459200",
+        "asset_type": "ETH",
+        "asset_contract": None,
+        "symbol": "ETH",
+        "amount": 0.25,
+    })
+    graph = build_unified_graph([bad_from])
+    assert graph == {}, f"Empty-from transfer must be skipped, got {list(graph.keys())}"
+    print("test_build_unified_graph_skips_empty_from_address passed!")
+
+
+def test_bfs_traverse_unified_skips_empty_to_address() -> None:
+    """Even if a malformed graph (e.g. supplied by a buggy caller) contains
+    an empty receiver edge, BFS must not promote '' to a discovered address.
+    """
+    from eth_txs import bfs_traverse_unified
+
+    malicious_graph = {
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa->": [
+            {
+                "from_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "to_address": "",
+                "asset_type": "ETH",
+                "symbol": "ETH",
+                "amount": 1.0,
+                "hash": "0xbad",
+                "timestamp": "1609459200",
+            }
+        ],
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": [
+            {
+                "from_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "to_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "asset_type": "ETH",
+                "symbol": "ETH",
+                "amount": 0.5,
+                "hash": "0xgood",
+                "timestamp": "1609459201",
+            }
+        ],
+    }
+    result = bfs_traverse_unified(
+        malicious_graph,
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        max_hops=3,
+    )
+    assert "" not in result["visited"], (
+        f"Empty receiver leaked into BFS visited set: {result['visited']}"
+    )
+    assert "" not in result["paths"], (
+        f"Empty receiver leaked into BFS paths: {list(result['paths'].keys())}"
+    )
+    assert "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" in result["visited"]
+    print("test_bfs_traverse_unified_skips_empty_to_address passed!")
+
+
+def test_analyze_trace_skips_empty_to_address() -> None:
+    """End-to-end: a trace whose input contains contract-creation txs
+    (empty `to`) must NOT yield an empty-string discovered address or any
+    attribution entry for it.
+    """
+    from eth_txs import (
+        analyze_trace,
+        build_unified_graph,
+        load_address_registry,
+        normalize_eth_transaction,
+    )
+    import os
+
+    target = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    other = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    transfers = [
+        normalize_eth_transaction({
+            "from": target,
+            "to": other,
+            "hash": "0xnormal_tx",
+            "timestamp": "1609459200",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 1.0,
+        }),
+        normalize_eth_transaction({
+            "from": target,
+            "to": "",  # contract creation
+            "hash": "0xcreate_tx",
+            "timestamp": "1609459201",
+            "asset_type": "ETH",
+            "asset_contract": None,
+            "symbol": "ETH",
+            "amount": 0.1,
+        }),
+    ]
+    graph = build_unified_graph(transfers)
+
+    registry_path = (
+        os.path.join(os.path.dirname(__file__), "address_registry.json")
+        if os.path.exists(os.path.join(os.path.dirname(__file__), "address_registry.json"))
+        else "address_registry.json"
+    )
+    registry = load_address_registry(registry_path)
+
+    result = analyze_trace(target, graph, registry, max_hops=3)
+
+    assert "" not in result["discovered"], (
+        f"Empty address in discovered: {result['discovered']}"
+    )
+    assert "" not in result["attribution"], (
+        f"Empty address in attribution: {list(result['attribution'].keys())}"
+    )
+    assert "" not in result["paths"], (
+        f"Empty address in paths: {list(result['paths'].keys())}"
+    )
+    # Sanity: the valid edge must still be discovered
+    assert other in result["discovered"]
+    print("test_analyze_trace_skips_empty_to_address passed!")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         test_graph()
@@ -3320,6 +3534,10 @@ if __name__ == "__main__":
         test_combine_attribution_sources_agree()
         test_combine_attribution_sources_conflict()
         test_combine_attribution_sources_both_unknown()
+        test_build_unified_graph_skips_empty_to_address()
+        test_build_unified_graph_skips_empty_from_address()
+        test_bfs_traverse_unified_skips_empty_to_address()
+        test_analyze_trace_skips_empty_to_address()
     else:
         main()
 
@@ -3329,7 +3547,15 @@ def build_unified_graph(transfers: list) -> dict:
     for transfer in transfers:
         if transfer["asset_type"] == "INTERNAL_ETH" and transfer.get("is_error") == "1":
             continue
-        edge_key = f"{transfer['from_address']}->{transfer['to_address']}"
+        from_addr = (transfer.get("from_address") or "").strip()
+        to_addr = (transfer.get("to_address") or "").strip()
+        if not is_valid_eth_address(from_addr) or not is_valid_eth_address(to_addr):
+            # Skip transfers with empty/invalid endpoints (e.g. contract-creation
+            # transactions have an empty `to` field). They do not represent a
+            # valid address-to-address transfer and must not pollute the graph
+            # or downstream BFS/attribution/pattern analysis.
+            continue
+        edge_key = f"{from_addr}->{to_addr}"
         graph[edge_key].append(transfer)
     return dict(graph)
 
@@ -3438,6 +3664,12 @@ def test_bfs_unified( ):
         assert "amount" in t
         assert "timestamp" in t
     print("test_bfs_unified passed!")
+
+
+# (Regression tests for contract-creation / empty destination handling are
+# defined earlier in this file, just before `if __name__ == "__main__":`,
+# so they are registered in the runner and visible at import time.)
+
 
 def calculate_pattern_risk(patterns):
     """Calculate risk score from detected behavioral patterns.
