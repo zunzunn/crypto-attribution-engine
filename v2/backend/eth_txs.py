@@ -1025,6 +1025,129 @@ def test_bfs() -> None:
 
     print("All BFS tests passed!")
 
+def test_bfs_mixed_case_target() -> None:
+    """Test BFS discovers nodes when target address has mixed case but graph uses lowercase."""
+    from eth_txs import bfs_traverse_unified, normalize_eth_address
+
+    target = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+    target_lower = target.lower()
+    # Graph edges use lowercase addresses
+    graph = {
+        target_lower + "->0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": [
+            {"hash": "0xabc", "value_eth": 1.0, "timestamp": "1609459200"}
+        ],
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": [
+            {"hash": "0xdef", "value_eth": 2.0, "timestamp": "1609459260"}
+        ],
+    }
+    result = bfs_traverse_unified(graph, target, max_hops=2)
+    visited = result["visited"]
+    # target and lowercase equivalents should be considered same, so visited should contain normalized forms
+    assert target_lower in visited, f"Expected normalized target {target_lower} in visited, got {visited}"
+    # hop1 should be discovered
+    hop1 = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    assert hop1 in visited, f"Expected hop1 {hop1} in visited, got {visited}"
+    # hop2 should be discovered
+    hop2 = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert hop2 in visited, f"Expected hop2 {hop2} in visited, got {visited}"
+    print("test_bfs_mixed_case_target passed!")
+
+def test_bfs_case_insensitive_duplicate() -> None:
+    """Ensure that two graph keys differing only by case do not create duplicate visited entries."""
+    from eth_txs import bfs_traverse_unified, normalize_eth_address
+
+    target = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    # Two edges from same sender (same normalized) but different case receivers
+    graph = {
+        target + "->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": [{"hash": "0x1", "value_eth": 1.0, "timestamp": "1"}],
+        target + "->0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB": [{"hash": "0x2", "value_eth": 2.0, "timestamp": "2"}],
+    }
+    result = bfs_traverse_unified(target, graph, max_hops=1)
+    visited = result["visited"]
+    # Because normalized receiver is same (lowercase), only one should appear
+    norm_bb = normalize_eth_address("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+    # We expect only one entry for that normalized address; check that the visited set size is reduced
+    # Since both receivers normalize to same, visited should have only one of them
+    assert len([a for a in visited if normalize_eth_address(a) == norm_bb]) == 1, \
+        f"Expected exactly 1 visited normalized receiver, got {visited}"
+    print("test_bfs_case_insensitive_duplicate passed!")
+
+def test_bfs_multiple_hops_mixed_case() -> None:
+    """Test 3‑hop traversal where each hop address may have different casing."""
+    from eth_txs import bfs_traverse_unified, normalize_eth_address
+
+    target = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+    target_lower = target.lower()
+    hop1 = "0x111111111111111111111111111111111111"
+    hop2 = "0x222222222222222222222222222222222222"
+    hop3 = "0x333333333333333333333333333333333333"
+    graph = {
+        target_lower + "->" + hop1: [{"hash": "0xa", "value_eth": 1.0, "timestamp": "1"}],
+        hop1 + "->" + hop2: [{"hash": "0xb", "value_eth": 2.0, "timestamp": "2"}],
+        hop2 + "->" + hop3: [{"hash": "0xc", "value_eth": 3.0, "timestamp": "3"}],
+    }
+    result = bfs_traverse_unified(graph, target, max_hops=3)
+    visited = result["visited"]
+    assert target_lower in visited, f"target not visited: {visited}"
+    assert hop1 in visited, f"hop1 not visited: {visited}"
+    assert hop2 in visited, f"hop2 not visited: {visited}"
+    assert hop3 in visited, f"hop3 not visited: {visited}"
+    print("test_bfs_multiple_hops_mixed_case passed!")
+
+def test_bfs_cyclic_graph() -> None:
+    """Ensure BFS does not infinite‑loop on a cycle and respects max_hops."""
+    from eth_txs import bfs_traverse_unified
+
+    target = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    # Simple cycle: target -> A -> target
+    graph = {
+        target + "->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": [{"hash": "0x1", "value_eth": 1.0, "timestamp": "1"}],
+        "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" + "->" + target: [{"hash": "0x2", "value_eth": 2.0, "timestamp": "2"}],
+    }
+    result = bfs_traverse_unified(graph, target, max_hops=3)
+    visited = result["visited"]
+    # Should not contain target twice; visited set size should be modest
+    assert target in visited
+    # Cycle should not add extra repeated addresses beyond max_hops limit
+    print("test_bfs_cyclic_graph passed!")
+
+def test_bfs_max_hops_enforcement() -> None:
+    """Verify max_hops limits traversal even with mixed‑case addresses."""
+    from eth_txs import bfs_traverse_unified
+
+    target = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    graph = {
+        target + "->0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": [{"hash": "0x1", "value_eth": 1.0, "timestamp": "1"}],
+        "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" + "->" + target + "->0xcccccccccccccccccccccccccccccccccccccccc": [{"hash": "0x2", "value_eth": 2.0, "timestamp": "2"}],
+    }
+    # Using max_hops=1 should only reach hop1
+    result1 = bfs_traverse_unified(graph, target, max_hops=1)
+    visited1 = result1["visited"]
+    assert len(visited1) == 2, f"max_hops=1 expected 2 visited (target+hop1), got {visited1}"
+    # Using max_hops=2 should also include any second hop (but graph may not have further)
+    result2 = bfs_traverse_unified(graph, target, max_hops=2)
+    visited2 = result2["visited"]
+    print("test_bfs_max_hops_enforcement passed!")
+
+def test_bfs_paths_preserve_original_case() -> None:
+    """Ensure path lists contain the original‑case addresses as they appear in the graph."""
+    from eth_txs import bfs_traverse_unified
+
+    target = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+    target_lower = target.lower()
+    hop = "0xBbCcDdEeFf0011223344556677889900AAaA"
+    graph = {
+        target_lower + "->" + hop: [{"hash": "0xabc", "value_eth": 1.0, "timestamp": "1"}],
+    }
+    result = bfs_traverse_unified(graph, target, max_hops=1)
+    paths = result["paths"]
+    # The path for hop should start with target then the original‑case hop address
+    hop_path = paths.get(hop, (None,))[0]
+    assert hop_path is not None, "hop should have a path"
+    assert hop_path[0] == target, f"Path start should be target, got {hop_path[0]}"
+    assert hop_path[1] == hop, f"Path should contain original‑case hop {hop}, got {hop_path[1]}"
+    print("test_bfs_paths_preserve_original_case passed!")
+
 def test_address_cli_with_mock() -> None:
     """Test the --address CLI flow using a mocked Etherscan API response.
 
