@@ -112,31 +112,95 @@ def trace_address(req: TraceRequest):
         registry = eth_txs.load_address_registry('address_registry.json')
         
         if use_live:
-            # --- LIVE ETHEREUM FETCH PHASE ---
-            # Fetch native ETH transactions from Etherscan V2 API
-            eth_txs_data = eth_txs.fetch_transactions_from_etherscan(address, "transaction.json")
-            
-            # Fetch ERC-20 token transfers from Etherscan API
-            erc20_txs = eth_txs.fetch_erc20_token_transfers(address, "token_transfers.json")
-            
-            # Fetch internal transactions (requires Etherscan API key for full functionality)
-            # Use internal transaction fetch only if we have the key
-            if etherscan_key:
+            # --- BOUNDED MULTI-HOP LIVE FETCH PHASE ---
+            # Track fetched normalized addresses to avoid duplicate API calls
+            fetched_norm = {eth_txs.normalize_eth_address(address)}
+            # Queue of addresses whose transactions still need to be fetched, ordered by hop
+            fetch_queue = [address]
+            # Accumulate normalized transfers per address
+            all_normalized = {}  # address -> normalized dict
+            # Build graph incrementally; keys are "FROM->TO"
+            graph = {}
+            # Remaining hops to process
+            remaining_hops = req.max_hops
+            # Process up to max_hops batches
+            while fetch_queue and remaining_hops > 0:
+                current = fetch_queue.pop(0)
+                cur_norm = eth_txs.normalize_eth_address(current)
+                # Skip if already fetched (including the target initially)
+                if cur_norm in fetched_norm and current != address:
+                    continue
+                fetched_norm.add(cur_norm)
+                # Fetch native ETH transactions for current address
                 try:
-                    internal_txs = eth_txs.fetch_internal_transactions(address, "internal_transactions.json")
+                    eth_txs_data = eth_txs.fetch_transactions_from_etherscan(current, "transaction.json")
                 except Exception:
-                    # If internal fetch fails, continue without them
+                    eth_txs_data = []
+                # Fetch ERC-20 token transfers
+                try:
+                    erc20_txs = eth_txs.fetch_erc20_token_transfers(current, "token_transfers.json")
+                except Exception:
+                    erc20_txs = []
+                # Fetch internal transactions if Etherscan key available
+                if etherscan_key:
+                    try:
+                        internal_txs = eth_txs.fetch_internal_transactions(current, "internal_transactions.json")
+                    except Exception:
+                        internal_txs = []
+                else:
                     internal_txs = []
-            else:
-                internal_txs = []
+                # Normalize into consistent format
+                normalized = eth_txs.normalize_all_transfers(eth_txs_data, erc20_txs, internal_txs)
+                all_normalized[current] = normalized
+                # Add edges to graph (key format "FROM->TO")
+                for tx in normalized.get('eth', []):
+                    # normalized may contain a dict with 'eth' key listing eth tx dicts
+                    f = tx.get('from') or tx.get('from_address') or ''
+                    t = tx.get('to') or tx.get('to_address') or ''
+                    if f and t:
+                        edge_key = f"{eth_txs.normalize_eth_address(f)}->{eth_txs.normalize_eth_address(t)}"
+                        graph.setdefault(edge_key, []).append({
+                            "hash": tx.get("hash", ""),
+                            "value_eth": tx.get("value_eth", 0),
+                            "timestamp": tx.get("timestamp", 0),
+                        })
+                for tx in normalized.get('erc20', []):
+                    f = tx.get('from') or tx.get('from_address') or ''
+                    t = tx.get('to') or tx.get('to_address') or ''
+                    if f and t:
+                        edge_key = f"{eth_txs.normalize_eth_address(f)}->{eth_txs.normalize_eth_address(t)}"
+                        graph.setdefault(edge_key, []).append({
+                            "hash": tx.get("hash", ""),
+                            "value_eth": tx.get("value_eth", 0),
+                            "timestamp": tx.get("timestamp", 0),
+                        })
+                for tx in normalized.get('internal', []):
+                    f = tx.get('from') or tx.get('from_address') or ''
+                    t = tx.get('to') or tx.get('to_address') or ''
+                    if f and t:
+                        edge_key = f"{eth_txs.normalize_eth_address(f)}->{eth_txs.normalize_eth_address(t)}"
+                        graph.setdefault(edge_key, []).append({
+                            "hash": tx.get("hash", ""),
+                            "value_eth": tx.get("value_eth", 0),
+                            "timestamp": tx.get("timestamp", 0),
+                        })
+                # Discover new receivers to fetch in the next hop
+                # Collect all unique receiver normalized addresses from added edges
+                new_addrs = set()
+                for edge_key, txs in graph.items():
+                    parts = edge_key.split("->")
+                    if len(parts) == 2:
+                        receiver_norm = parts[1]
+                        if receiver_norm not in fetched_norm:
+                            new_addrs.add(receiver_norm)
+                # Add newly discovered normalized addresses to queue for next iteration
+                for a in new_addrs:
+                    # map back to original case; we store the first seen original address
+                    # use a simple dict later if needed; for queue we can use normalized form
+                    fetch_queue.append(a)
+                remaining_hops -= 1
             
-            # Normalize all transaction types into consistent format
-            normalized = eth_txs.normalize_all_transfers(eth_txs_data, erc20_txs, internal_txs)
-            
-            # Build unified graph from normalized transfers
-            graph = eth_txs.build_unified_graph(normalized)
-            
-            # Run BFS Trace & Trace-level risk analysis
+            # After building the augmented graph, run BFS trace and risk analysis
             trace_results = eth_txs.analyze_trace(address, graph, registry, max_hops=req.max_hops)
             
         else:
