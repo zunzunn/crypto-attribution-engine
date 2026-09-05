@@ -9,6 +9,7 @@ import InvestigationHistoryView from './components/history/InvestigationHistoryV
 import EntitiesView from './components/EntitiesView';
 import ReportPreviewView from './components/reports/ReportPreviewView';
 import SystemAboutView from './components/system/SystemAboutView';
+import SettingsView from './components/system/SettingsView';
 import CyberBackground3D from './components/CyberBackground3D';
 import { checkApiHealth, fetchAddressTrace } from './services/api';
 import {
@@ -21,7 +22,39 @@ import { isValidEthAddress, shortenAddress, generateCaseId } from './utils/forma
 
 const DEFAULT_TARGET = '0x71C7656EC7ab88b098defB751B7401B5f6d8976F';
 
+const STORED_THEME_KEY = 'crypto-attribution-theme';
+
+const useTheme = () => {
+  const stored = localStorage.getItem(STORED_THEME_KEY);
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  const [theme, setTheme] = useState(() => {
+    if (stored) return stored;
+    return prefersDark ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORED_THEME_KEY, theme);
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e) => {
+      if (!localStorage.getItem(STORED_THEME_KEY)) {
+        setTheme(e.matches ? 'dark' : 'light');
+      }
+    };
+    handleChange(mq);
+    mq.addEventListener('change', handleChange);
+    return () => mq.removeEventListener('change', handleChange);
+  }, []);
+
+  return [theme, setTheme];
+};
+
 export default function App() {
+  const [theme, setTheme] = useTheme();
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [targetAddress, setTargetAddress] = useState(DEFAULT_TARGET);
@@ -74,7 +107,7 @@ export default function App() {
   }, [checkHealth]);
 
   // Run a forensic trace
-  const executeTrace = useCallback(async (addr, hops = 2, useEtherscan = false) => {
+  const executeTrace = useCallback(async (addr, hops = 2, useEtherscan = true) => {
     if (!addr) return;
     setIsExecutingTrace(true);
     setCurrentTab('new'); // Show progress stepper during execution
@@ -128,7 +161,7 @@ export default function App() {
         setLastTraceIsLive(Boolean(foundCase.is_live));
         setCurrentTab('workspace');
       } else {
-        executeTrace(addr, 2, false);
+        executeTrace(addr, 2, true);
       }
     } else if (itemOrAddress && typeof itemOrAddress === 'object') {
       const c = itemOrAddress;
@@ -139,7 +172,7 @@ export default function App() {
         setLastTraceIsLive(Boolean(c.is_live));
         setCurrentTab('workspace');
       } else {
-        executeTrace(c.target_address, c.max_hops || 2, c.is_live || false);
+        executeTrace(c.target_address, c.max_hops || 2, true);
       }
     }
   }, [history, executeTrace]);
@@ -204,7 +237,13 @@ export default function App() {
   }, [notify]);
 
   return (
-    <div className="relative min-h-screen text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden bg-[#060912]">
+    <div
+      className="relative min-h-screen font-sans overflow-x-hidden transition-colors duration-300"
+      style={{
+        backgroundColor: theme === 'light' ? '#f8fafc' : '#090d16',
+        color: 'var(--text-primary)'
+      }}
+    >
       {/* Restrained 3D WebGL Background Particles (Low opacity, non-intrusive) */}
       <div className="fixed inset-0 pointer-events-none opacity-25 z-0">
         <CyberBackground3D />
@@ -299,6 +338,16 @@ export default function App() {
             apiLive={apiLive}
             apiLatency={apiLatency}
             onCheckHealth={checkHealth}
+          />
+        )}
+
+        {currentTab === 'settings' && (
+          <SettingsView
+            theme={theme}
+            setTheme={setTheme}
+            onCheckHealth={checkHealth}
+            apiLive={apiLive}
+            apiLatency={apiLatency}
           />
         )}
       </main>

@@ -2,90 +2,429 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   DESIGN TOKENS - Crypto Attribution Engine v2
+   Apple-inspired minimal UI redesign & Intelligence Forensics
+   ========================================================================== */
+
+/* Default Root (Dark Mode Default for Forensic Terminal) */
 :root {
+  --background: #0b0f19;
+  --background-subtle: #111827;
+  --surface: rgba(17, 24, 39, 0.75);
+  --surface-elevated: #111827;
+  --surface-subtle: #0f172a;
+  --foreground: #f8fafc;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --input: rgba(15, 23, 42, 0.85);
+  --ring: #3b82f6;
+
+  --border-radius: 12px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #0f172a;
+
+  --accent-blue: #3b82f6;
+  --accent-purple: #a855f7;
+  --accent-teal: #14b8a6;
+  --accent-green: #22c55e;
+  --accent-orange: #f97316;
+  --accent-cyan: #06b6d4;
+
+  --risk-low: #10b981;
+  --risk-medium: #f59e0b;
+  --risk-high: #f43f5e;
+  --risk-critical: #ef4444;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Backward compatibility tokens */
   --bg-base: #060912;
   --bg-panel: rgba(13, 19, 33, 0.75);
   --bg-panel-solid: #0d1321;
   --bg-surface: #12192c;
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(0, 240, 255, 0.35);
-  --accent-cyan: #00f0ff;
-  --accent-blue: #3b82f6;
 }
 
-@layer base {
-  body {
-    @apply bg-[#060912] text-slate-100 font-sans antialiased selection:bg-cyan-500/30 selection:text-cyan-200 min-h-screen overflow-x-hidden;
-    background-color: #060912;
-    background-image: 
-      radial-gradient(ellipse 80% 80% at 50% -20%, rgba(6, 182, 212, 0.08), rgba(255, 255, 255, 0)),
-      radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.035) 1px, transparent 0);
-    background-size: 100% 100%, 24px 24px;
-    background-attachment: fixed;
+/* Light Theme */
+[data-theme="light"],
+html.theme-light {
+  --background: #f8fafc;
+  --background-subtle: #f1f5f9;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-subtle: #f8fafc;
+  --foreground: #0f172a;
+  --border: #e2e8f0;
+  --border-subtle: #cbd5e1;
+  --input: #ffffff;
+  --ring: #2563eb;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-inverse: #f8fafc;
+
+  --accent-blue: #2563eb;
+  --accent-purple: #7c3aed;
+  --accent-teal: #0d9488;
+  --accent-green: #16a34a;
+  --accent-orange: #ea580c;
+  --accent-cyan: #0891b2;
+
+  --risk-low: #059669;
+  --risk-medium: #d97706;
+  --risk-high: #e11d48;
+  --risk-critical: #dc2626;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --bg-base: #f8fafc;
+  --bg-panel: #ffffff;
+  --bg-panel-solid: #ffffff;
+  --bg-surface: #f1f5f9;
+}
+
+/* Dark Theme */
+[data-theme="dark"],
+html.theme-dark,
+.dark {
+  --background: #090d16;
+  --background-subtle: #0f172a;
+  --surface: rgba(15, 23, 42, 0.75);
+  --surface-elevated: #0f172a;
+  --surface-subtle: #131d31;
+  --foreground: #f8fafc;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --input: rgba(15, 23, 42, 0.85);
+  --ring: #3b82f6;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #0f172a;
+
+  --accent-blue: #3b82f6;
+  --accent-purple: #a855f7;
+  --accent-teal: #14b8a6;
+  --accent-green: #22c55e;
+  --accent-orange: #f97316;
+  --accent-cyan: #06b6d4;
+
+  --risk-low: #10b981;
+  --risk-medium: #f59e0b;
+  --risk-high: #f43f5e;
+  --risk-critical: #ef4444;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --bg-base: #060912;
+  --bg-panel: rgba(13, 19, 33, 0.75);
+  --bg-panel-solid: #0d1321;
+  --bg-surface: #12192c;
+}
+
+/* System Theme - follows OS preference */
+[data-theme="system"] {
+  @media (prefers-color-scheme: dark) {
+    --background: #090d16;
+    --background-subtle: #0f172a;
+    --surface: rgba(15, 23, 42, 0.75);
+    --surface-elevated: #0f172a;
+    --surface-subtle: #131d31;
+    --foreground: #f8fafc;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-subtle: rgba(255, 255, 255, 0.12);
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+  }
+
+  @media (prefers-color-scheme: light) {
+    --background: #f8fafc;
+    --background-subtle: #f1f5f9;
+    --surface: #ffffff;
+    --surface-elevated: #ffffff;
+    --surface-subtle: #f8fafc;
+    --foreground: #0f172a;
+    --border: #e2e8f0;
+    --border-subtle: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
   }
 }
 
-/* Custom minimal scrollbars */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-::-webkit-scrollbar-track {
-  background: rgba(6, 9, 18, 0.85);
-}
-::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #00f0ff;
+/* ==========================================================================
+   2. BASE STYLES
+   ========================================================================== */
+
+html {
+  box-sizing: border-box;
+  font-size: 16px;
+  background-color: var(--background);
 }
 
-/* Glassmorphism Panels */
-.cyber-panel {
-  background: rgba(13, 19, 33, 0.78);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.45);
+*, *::before, *::after {
+  box-sizing: inherit;
 }
 
-.cyber-panel-subtle {
-  background: rgba(18, 25, 44, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-feature-settings: 'liga', 'tnum';
+  font-variant-numeric: tabular-nums;
+  background-color: var(--background);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.cyber-panel-glow {
-  background: rgba(13, 19, 33, 0.85);
-  backdrop-filter: blur(14px);
-  border: 1px solid rgba(0, 240, 255, 0.25);
-  box-shadow: 0 0 25px -5px rgba(0, 240, 255, 0.12), inset 0 1px 0 0 rgba(0, 240, 255, 0.2);
+/* Media element defaults */
+img, svg, video, canvas, audio, iframe {
+  display: block;
+  max-width: 100%;
 }
 
-.cyber-card {
-  background: rgba(18, 26, 45, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.cyber-card:hover {
-  background: rgba(22, 33, 58, 0.75);
-  border-color: rgba(0, 240, 255, 0.3);
-  box-shadow: 0 8px 24px -6px rgba(0, 240, 255, 0.15);
-}
-
-/* Cytoscape container styling */
+/* ==========================================================================
+   3. CYTOSCAPE CANVAS (MUST BE ABSOLUTELY SIZED)
+   ========================================================================== */
 .cytoscape-container {
-  width: 100%;
-  height: 100%;
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
 }
 
-/* Print Styles for Court / Forensic Dossier */
+/* ==========================================================================
+   4. APPLE-STYLE COMPONENT CLASSES
+   ========================================================================== */
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  border: none;
+  transition: var(--transition-fast);
+  user-select: none;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary button */
+.btn-primary {
+  background: var(--accent-blue);
+  color: white;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* Secondary button */
+.btn-secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.btn-secondary:active {
+  background: var(--surface-subtle);
+}
+
+/* Inputs */
+.input {
+  width: 100%;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 0.875rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  transition: var(--transition-fast);
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Cards & Panels */
+.card {
+  background: var(--surface-elevated);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 20px;
+  transition: var(--transition-fast);
+}
+
+.card:hover {
+  border-color: var(--border-subtle);
+}
+
+.panel {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 16px;
+  transition: var(--transition-fast);
+}
+
+/* Backward-compatible panels */
+.cyber-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.cyber-panel-subtle {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.cyber-panel-glow {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.cyber-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.cyber-card:hover {
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ==========================================================================
+   5. RISK BADGES
+   ========================================================================== */
+
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.risk-low { background: rgba(16, 185, 129, 0.15); color: var(--risk-low); border: 1px solid rgba(16, 185, 129, 0.3); }
+.risk-medium { background: rgba(245, 158, 11, 0.15); color: var(--risk-medium); border: 1px solid rgba(245, 158, 11, 0.3); }
+.risk-high { background: rgba(244, 63, 94, 0.15); color: var(--risk-high); border: 1px solid rgba(244, 63, 94, 0.3); }
+.risk-critical { background: rgba(239, 68, 68, 0.15); color: var(--risk-critical); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+/* ==========================================================================
+   6. UTILITY CLASSES
+   ========================================================================== */
+
+.bg-background { background-color: var(--background); }
+.bg-surface { background-color: var(--surface); }
+.bg-surface-elevated { background-color: var(--surface-elevated); }
+.bg-subtle { background-color: var(--surface-subtle); }
+
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-muted { color: var(--text-muted); }
+.text-inverse { color: var(--text-inverse); }
+
+.border-theme { border-color: var(--border); }
+.border-subtle { border-color: var(--border-subtle); }
+
+/* Hover scale */
+.hover-scale:hover {
+  transform: scale(1.01);
+}
+
+/* Focus ring */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* Smooth theme transitions */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color var(--transition-normal), border-color var(--transition-normal), color var(--transition-normal) !important;
+}
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print Styles for Court Dossier */
 @media print {
   body {
     background: #ffffff !important;
@@ -100,7 +439,7 @@
     display: block !important;
   }
 
-  .cyber-panel, .cyber-card {
+  .cyber-panel, .cyber-card, .card, .panel {
     background: #ffffff !important;
     border: 1px solid #cbd5e1 !important;
     box-shadow: none !important;

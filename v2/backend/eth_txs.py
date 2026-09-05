@@ -76,11 +76,11 @@ def fetch_transactions_from_etherscan(address: str, filepath: str = "transaction
     api_key = os.getenv("ETHERSCAN_API_KEY")
     if not api_key:
         print("Error: ETHERSCAN_API_KEY not set in environment.", file=sys.stderr)
-        sys.exit(1)
+        return []
 
     if not is_valid_eth_address(address):
         print(f"Invalid Ethereum address: {address}", file=sys.stderr)
-        sys.exit(1)
+        return []
 
     base_url = "https://api.etherscan.io/v2/api"
     params = {
@@ -105,7 +105,7 @@ def fetch_transactions_from_etherscan(address: str, filepath: str = "transaction
             # Print complete error response (including result field) without exposing the API key
             error_detail = data.get("result", "No result field")
             print(f"Etherscan API error (status={data.get('status')}, message={data.get('message')}, result={error_detail})", file=sys.stderr)
-            sys.exit(1)
+            return []
 
         transactions = data.get("result", [])
         with open(filepath, "w") as f:
@@ -116,7 +116,7 @@ def fetch_transactions_from_etherscan(address: str, filepath: str = "transaction
 
     except requests.exceptions.RequestException as exc:
         print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
-        sys.exit(1)
+        return []
 
 def fetch_erc20_token_transfers(address: str, filepath: str = "token_transfers.json") -> list:
     """Fetch ERC-20 token transfer history for an Ethereum address using Etherscan API V2.
@@ -130,11 +130,11 @@ def fetch_erc20_token_transfers(address: str, filepath: str = "token_transfers.j
     api_key = os.getenv("ETHERSCAN_API_KEY")
     if not api_key:
         print("Error: ETHERSCAN_API_KEY not set in environment.", file=sys.stderr)
-        sys.exit(1)
+        return []
 
     if not is_valid_eth_address(address):
         print(f"Invalid Ethereum address: {address}", file=sys.stderr)
-        sys.exit(1)
+        return []
 
     base_url = "https://api.etherscan.io/v2/api"
     params = {
@@ -159,7 +159,7 @@ def fetch_erc20_token_transfers(address: str, filepath: str = "token_transfers.j
             # Print complete error response (including result field) without exposing the API key
             error_detail = data.get("result", "No result field")
             print(f"Etherscan API error (status={data.get('status')}, message={data.get('message')}, result={error_detail})", file=sys.stderr)
-            sys.exit(1)
+            return []
 
         token_transfers = data.get("result", [])
         with open(filepath, "w") as f:
@@ -170,7 +170,7 @@ def fetch_erc20_token_transfers(address: str, filepath: str = "token_transfers.j
 
     except requests.exceptions.RequestException as exc:
         print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
-        sys.exit(1)
+        return []
 
 def parse_erc20_transfer(raw: dict) -> dict:
     """Parse a raw Etherscan token transfer dict into a common format.
@@ -1706,11 +1706,11 @@ def fetch_internal_transactions(address: str, filepath: str = "internal_transact
     api_key = os.getenv("ETHERSCAN_API_KEY")
     if not api_key:
         print("Error: ETHERSCAN_API_KEY not set in environment.", file=sys.stderr)
-        sys.exit(1)
+        return []
 
     if not is_valid_eth_address(address):
         print(f"Invalid Ethereum address: {address}", file=sys.stderr)
-        sys.exit(1)
+        return []
 
     base_url = "https://api.etherscan.io/v2/api"
     params = {
@@ -1735,7 +1735,7 @@ def fetch_internal_transactions(address: str, filepath: str = "internal_transact
             # Print complete error response (including result field) without exposing the API key
             error_detail = data.get("result", "No result field")
             print(f"Etherscan API error (status={data.get('status')}, message={data.get('message')}, result={error_detail})", file=sys.stderr)
-            sys.exit(1)
+            return []
 
         internal_txs = data.get("result", [])
         with open(filepath, "w") as f:
@@ -1746,7 +1746,7 @@ def fetch_internal_transactions(address: str, filepath: str = "internal_transact
 
     except requests.exceptions.RequestException as exc:
         print(f"Error fetching from Etherscan: {exc}", file=sys.stderr)
-        sys.exit(1)
+        return []
 
 def parse_internal_transaction(raw: dict) -> dict:
     """Parse a raw Etherscan internal transaction dict into a common format.
@@ -1975,11 +1975,27 @@ def fetch_address_metadata_from_etherscan(address: str) -> dict:
     api_key = os.getenv("ETHERSCAN_API_KEY")
     if not api_key:
         print("Error: ETHERSCAN_API_KEY not set in environment.", file=sys.stderr)
-        sys.exit(1)
+        return {
+            "address": address,
+            "entity_name": "Unknown",
+            "entity_type": "Unknown",
+            "source": "Etherscan Metadata",
+            "confidence": 0.0,
+            "evidence": "ETHERSCAN_API_KEY not set in environment",
+            "raw_metadata": {},
+        }
 
     if not is_valid_eth_address(address):
         print(f"Invalid Ethereum address: {address}", file=sys.stderr)
-        sys.exit(1)
+        return {
+            "address": address,
+            "entity_name": "Unknown",
+            "entity_type": "Unknown",
+            "source": "Etherscan Metadata",
+            "confidence": 0.0,
+            "evidence": f"Invalid Ethereum address: {address}",
+            "raw_metadata": {},
+        }
 
     base_url = "https://api.etherscan.io/v2/api"
     params = {

@@ -1,22 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import cytoscape from 'cytoscape';
-import GraphToolbar from './investigation/GraphToolbar';
+import { ZoomIn, ZoomOut, Maximize2, RotateCcw, Search, HelpCircle } from 'lucide-react';
 import { shortenAddress, formatAmount, getEntityColor } from '../utils/formatters';
 
-const TARGET_NODE_SIZE = 58;
-const OTHER_NODE_SIZE = 42;
-const MIN_H_SPACING = 170;
-const LAYER_GAP = 160;
-const PADDING = 60;
-const MIN_ZOOM = 0.15;
-const MAX_ZOOM = 2.8;
+const TARGET_NODE_SIZE = 52;
+const OTHER_NODE_SIZE = 38;
+const MIN_H_SPACING = 140;
+const LAYER_GAP = 130;
+const PADDING = 40;
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 3;
 
 function groupByHop(elements, targetId) {
   const out = new Map();
   elements.forEach((e) => {
     if (e.group !== 'nodes' || e.data.isHopLabel) return;
     const id = e.data.id;
-    if (id === targetId) return; // Target is Hop 0
+    if (id === targetId) return;
     let h = e.data.hopDistance;
     if (h === undefined || h === null) h = 1;
     if (!out.has(h)) out.set(h, []);
@@ -36,13 +36,11 @@ function computeBBox(positions, elements) {
     const p = positions[e.data.id];
     if (!p) return;
 
-    let r = OTHER_NODE_SIZE / 2;
-    if (e.data.isTarget) r = TARGET_NODE_SIZE / 2;
-
+    const r = OTHER_NODE_SIZE / 2;
     minX = Math.min(minX, p.x - r);
     maxX = Math.max(maxX, p.x + r);
     minY = Math.min(minY, p.y - r);
-    maxY = Math.max(maxY, p.y + r);
+    maxY = Math.max(maxY, p.y - r);
   });
 
   if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
@@ -52,13 +50,13 @@ function computeBBox(positions, elements) {
 function layeredLayoutPositions(elements, targetId, containerDims) {
   const byHop = groupByHop(elements, targetId);
 
-  const W = Math.max(containerDims.width || 0, 750);
+  const W = Math.max(containerDims.width || 0, 600);
   const usableW = Math.max(MIN_H_SPACING * 3, W - 2 * PADDING);
 
   const positions = {};
 
-  // Hop 0: Target centered at the top
-  let currentY = 70;
+  // Hop 0: Target centered at top
+  let currentY = 50;
   if (targetId) {
     positions[targetId] = { x: 0, y: currentY };
   }
@@ -69,7 +67,6 @@ function layeredLayoutPositions(elements, targetId, containerDims) {
 
   activeHops.forEach((hop) => {
     const nodes = byHop.get(hop).slice();
-    // Sort deterministically: highest risk first, then address
     nodes.sort((aId, bId) => {
       const aNode = elements.find((e) => e.data.id === aId);
       const bNode = elements.find((e) => e.data.id === bId);
@@ -82,10 +79,10 @@ function layeredLayoutPositions(elements, targetId, containerDims) {
     const N = nodes.length;
     currentY += LAYER_GAP;
 
-    const cols = Math.min(6, N);
+    const cols = Math.min(5, N);
     const numRows = Math.ceil(N / cols);
-    const hSpacing = Math.min(240, Math.max(MIN_H_SPACING, usableW / (cols + 1)));
-    const vSpacing = 95;
+    const hSpacing = Math.min(200, Math.max(MIN_H_SPACING, usableW / (cols + 1)));
+    const vSpacing = 70;
 
     nodes.forEach((id, i) => {
       const row = Math.floor(i / cols);
@@ -111,8 +108,8 @@ function fitCamera(cy, container, layoutInfo) {
   const H = Math.max(container.clientHeight || 0, 320);
   const bbox = layoutInfo.bbox || { x: 0, y: 0, w: 0, h: 0 };
 
-  const requiredW = Math.max(bbox.w + 2 * PADDING, 250);
-  const requiredH = Math.max(bbox.h + 2 * PADDING, 250);
+  const requiredW = Math.max(bbox.w + 2 * PADDING, 200);
+  const requiredH = Math.max(bbox.h + 2 * PADDING, 200);
   const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(W / requiredW, H / requiredH)));
 
   cy.zoom(zoom);
@@ -162,7 +159,7 @@ function buildElements(traceData) {
 
     let displayLabel = '';
     if (isTarget) {
-      displayLabel = `[ TARGET WALLET ]\n${shortenAddress(addr, 6, 4)}`;
+      displayLabel = `${shortenAddress(addr, 6, 4)} (Target)`;
     } else if (isUnknown) {
       displayLabel = shortenAddress(addr, 6, 4);
     } else {
@@ -326,30 +323,30 @@ export default function CytoscapeGraph({
           selector: 'node',
           style: {
             label: 'data(label)',
-            color: '#f1f5f9',
+            color: '#f8fafc',
             'font-size': '10px',
-            'font-family': 'monospace',
+            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             'font-weight': 600,
             'text-valign': 'bottom',
             'text-halign': 'center',
-            'text-margin-y': 8,
+            'text-margin-y': 6,
             'text-wrap': 'wrap',
-            'text-max-width': '140px',
+            'text-max-width': '130px',
             'line-height': 1.3,
-            'text-background-opacity': 0.92,
-            'text-background-color': '#070b14',
-            'text-background-padding': '4px',
+            'text-background-opacity': 0.9,
+            'text-background-color': '#090d16',
+            'text-background-padding': '3px',
             'text-background-shape': 'roundrectangle',
             'text-border-width': 1,
-            'text-border-color': '#1e293b',
-            'text-border-opacity': 0.9,
+            'text-border-color': '#334155',
+            'text-border-opacity': 0.8,
             'background-color': '#1e293b',
             'border-width': 2,
-            'border-color': '#334155',
+            'border-color': '#475569',
             width: OTHER_NODE_SIZE,
             height: OTHER_NODE_SIZE,
-            'transition-property': 'background-color, border-color, opacity, width, height, shadow-blur',
-            'transition-duration': '0.2s',
+            'transition-property': 'background-color, border-color, opacity, width, height',
+            'transition-duration': '0.15s',
             'z-index': 10,
           },
         },
@@ -357,16 +354,16 @@ export default function CytoscapeGraph({
           selector: 'node.isAttributed',
           style: {
             'background-color': (n) => getEntityColor(n.data('entityType')),
-            'border-width': 2.5,
-            'border-color': '#0f172a',
+            'border-width': 2,
+            'border-color': '#64748b',
           },
         },
         {
           selector: 'node.isUnknown',
           style: {
-            'background-color': '#090d16',
-            'border-width': 2,
-            'border-color': '#64748b',
+            'background-color': '#1e293b',
+            'border-width': 1.5,
+            'border-color': '#475569',
             'border-style': 'dashed',
             color: '#94a3b8',
           },
@@ -375,97 +372,88 @@ export default function CytoscapeGraph({
           selector: 'node.risk-critical',
           style: {
             'border-color': '#ef4444',
-            'border-width': 3.5,
-            'shadow-blur': 16,
-            'shadow-color': '#ef4444',
-            'shadow-opacity': 0.65,
+            'border-width': 2.5,
           },
         },
         {
           selector: 'node.risk-high',
           style: {
             'border-color': '#f43f5e',
-            'border-width': 3,
-            'shadow-blur': 10,
-            'shadow-color': '#f43f5e',
-            'shadow-opacity': 0.5,
+            'border-width': 2,
           },
         },
         {
           selector: 'node.risk-medium',
           style: {
             'border-color': '#f59e0b',
-            'border-width': 2.5,
+            'border-width': 2,
           },
         },
         {
           selector: 'node.risk-low',
           style: {
             'border-color': '#10b981',
-            'border-width': 2,
+            'border-width': 1.5,
           },
         },
         {
           selector: 'node.isTarget',
           style: {
-            'background-color': '#00f0ff',
+            'background-color': '#8b5cf6',
             'border-color': '#ffffff',
-            'border-width': 4.5,
+            'border-width': 3,
             width: TARGET_NODE_SIZE,
             height: TARGET_NODE_SIZE,
-            'font-size': '11px',
+            'font-size': '10px',
             'font-weight': 'bold',
-            color: '#00f0ff',
+            color: '#ffffff',
             'text-valign': 'top',
             'text-halign': 'center',
-            'text-margin-y': -14,
-            'text-border-color': '#00f0ff',
-            'shadow-blur': 28,
-            'shadow-color': '#00f0ff',
-            'shadow-opacity': 0.9,
+            'text-margin-y': -16,
+            'text-background-opacity': 0.9,
+            'text-background-color': '#090d16',
+            'text-border-width': 1,
+            'text-border-color': '#8b5cf6',
             'z-index': 999,
           },
         },
         {
           selector: 'node.faded',
           style: {
-            opacity: 0.15,
-            'text-opacity': 0.15,
+            opacity: 0.2,
+            'text-opacity': 0.2,
           },
         },
         {
           selector: 'node.highlighted, node:selected',
           style: {
-            'border-width': 4,
-            'border-color': '#00f0ff',
-            'shadow-blur': 20,
-            'shadow-color': '#00f0ff',
-            'shadow-opacity': 0.9,
+            'border-width': 3.5,
+            'border-color': '#3b82f6',
             'z-index': 80,
           },
         },
         {
           selector: 'edge',
           style: {
-            width: 1.8,
-            'line-color': '#334155',
-            'target-arrow-color': '#64748b',
+            width: 1.5,
+            'line-color': '#475569',
+            'target-arrow-color': '#475569',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
             label: '',
-            'font-size': '10px',
-            'font-family': 'monospace',
-            color: '#e2e8f0',
-            'text-background-opacity': 0.92,
-            'text-background-color': '#070b14',
-            'text-background-padding': '3px',
+            'font-size': '9px',
+            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            color: '#94a3b8',
+            'text-background-opacity': 0.85,
+            'text-background-color': '#090d16',
+            'text-background-padding': '2px',
             'text-background-shape': 'roundrectangle',
             'text-border-width': 1,
-            'text-border-color': '#1e293b',
+            'text-border-color': '#334155',
             opacity: 0.65,
-            'arrow-scale': 0.95,
-            'transition-property': 'line-color, target-arrow-color, opacity, width',
-            'transition-duration': '0.2s',
+            'arrow-scale': 0.9,
+            'transition-property': 'line-color, opacity, width',
+            'transition-duration': '0.15s',
             'z-index': 1,
           },
         },
@@ -478,17 +466,16 @@ export default function CytoscapeGraph({
         {
           selector: 'edge.faded',
           style: {
-            opacity: 0.05,
+            opacity: 0.08,
           },
         },
         {
           selector: 'edge.edge-hot, edge.edge-hover',
           style: {
-            label: 'data(label)',
-            'line-color': '#00f0ff',
-            'target-arrow-color': '#00f0ff',
-            width: 2.8,
-            opacity: 1,
+            'line-color': '#3b82f6',
+            'target-arrow-color': '#3b82f6',
+            width: 2.5,
+            opacity: 0.9,
             'z-index': 70,
           },
         },
@@ -498,8 +485,8 @@ export default function CytoscapeGraph({
     cy.layout({
       name: 'preset',
       positions: layoutInfo.positions,
-      animate: true,
-      animationDuration: 600,
+      animate: false,
+      animationDuration: 0,
       fit: false,
       padding: 0,
     }).run();
@@ -510,7 +497,7 @@ export default function CytoscapeGraph({
       fitCamera(cy, containerRef.current, layoutInfoRef.current);
     };
 
-    [60, 300, 800].forEach((ms) => setTimeout(frameToContainer, ms));
+    [40, 200, 500].forEach((ms) => setTimeout(frameToContainer, ms));
 
     cy.on('tap', 'node', (evt) => {
       const node = evt.target;
@@ -600,22 +587,18 @@ export default function CytoscapeGraph({
       const addr = (data.fullAddress || '').toLowerCase();
       const entName = (data.entity || '').toLowerCase();
 
-      // Entity filter match
       let entityMatch = false;
       selectedEntities.forEach((cat) => {
         if (cat === 'UNKNOWN' && (data.isUnknown || entityType === 'UNKNOWN')) entityMatch = true;
         else if (entityType.includes(cat)) entityMatch = true;
       });
 
-      // Risk match
       const riskMatch = selectedRisks.some(
         (r) => r.toLowerCase() === riskLevel.toLowerCase()
       );
 
-      // Hop match
       const hopMatch = selectedHops.includes(hop);
 
-      // Search match
       const searchMatch = !filterSearch ||
         addr.includes(filterSearch.toLowerCase()) ||
         entName.includes(filterSearch.toLowerCase());
@@ -629,7 +612,6 @@ export default function CytoscapeGraph({
       }
     });
 
-    // Hide edges where source or target is hidden
     cy.edges().each((edge) => {
       const src = edge.source();
       const tgt = edge.target();
@@ -679,8 +661,8 @@ export default function CytoscapeGraph({
     cy.layout({
       name: 'preset',
       positions: rebuilt.positions,
-      animate: true,
-      animationDuration: 600,
+      animate: false,
+      animationDuration: 0,
       fit: false,
       padding: 0,
     }).run();
@@ -689,7 +671,7 @@ export default function CytoscapeGraph({
       if (!cy.destroyed() && containerRef.current) {
         fitCamera(cy, containerRef.current, layoutInfoRef.current);
       }
-    }, 650);
+    }, 100);
   };
 
   const [showSearch, setShowSearch] = useState(false);
@@ -720,8 +702,8 @@ export default function CytoscapeGraph({
       }
       cyRef.current.animate({
         center: { eles: node },
-        zoom: 1.3,
-        duration: 450
+        zoom: 1.2,
+        duration: 300
       });
       setShowSearch(false);
       setNodeSearchInput('');
@@ -729,33 +711,69 @@ export default function CytoscapeGraph({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[580px] lg:min-h-[640px] cyber-panel rounded-xl overflow-hidden border border-slate-800/80">
+    <div className="relative w-full h-full min-h-[500px] bg-slate-950/90 rounded-xl border border-slate-800/50 overflow-hidden">
       <div ref={containerRef} className="cytoscape-container w-full h-full" />
 
-      {/* Floating Toolbar */}
-      <GraphToolbar
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onFitTarget={handleFitTarget}
-        onResetLayout={handleResetLayout}
-        showEdgeLabels={showEdgeLabels}
-        setShowEdgeLabels={setShowEdgeLabels}
-        onToggleSearch={() => setShowSearch(!showSearch)}
-        showSearch={showSearch}
-        onToggleLegend={() => setShowLegend(!showLegend)}
-        showLegend={showLegend}
-      />
+      {/* Floating Toolbar - Sleek Apple Translucent Pill */}
+      <div className="absolute top-3 left-3 flex items-center gap-1 z-20 bg-slate-900/80 backdrop-blur-md p-1 rounded-xl border border-slate-700/50 shadow-lg">
+        <button
+          onClick={handleZoomIn}
+          title="Zoom In"
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={handleZoomOut}
+          title="Zoom Out"
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition"
+        >
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+        <div className="w-[1px] h-4 bg-slate-700/60 mx-0.5" />
+        <button
+          onClick={handleFitTarget}
+          title="Fit to Center"
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={handleResetLayout}
+          title="Reset Hierarchical Layout"
+          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+        <div className="w-[1px] h-4 bg-slate-700/60 mx-0.5" />
+        <button
+          onClick={() => setShowSearch(!showSearch)}
+          title="Find Node in Graph"
+          className={`p-1.5 rounded-lg transition ${
+            showSearch ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          <Search className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => setShowLegend(!showLegend)}
+          title="Toggle Legend"
+          className={`p-1.5 rounded-lg transition ${
+            showLegend ? 'bg-slate-800 text-white' : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+          }`}
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
-      {/* Inline Node Search Dropdown */}
+      {/* Node Search */}
       {showSearch && (
-        <div className="absolute top-4 left-4 z-30 cyber-panel p-3 rounded-xl border border-slate-700/90 shadow-2xl backdrop-blur-md w-72 space-y-2">
+        <div className="absolute top-2 right-2 z-30 bg-slate-900 rounded-lg border border-slate-700 p-2.5 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold">
-              Find Wallet in Graph
-            </span>
+            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Find</span>
             <button
               onClick={() => setShowSearch(false)}
-              className="text-slate-400 hover:text-white text-xs px-1"
+              className="text-slate-500 hover:text-slate-200 text-xs px-1"
             >
               ✕
             </button>
@@ -764,92 +782,68 @@ export default function CytoscapeGraph({
             type="text"
             value={nodeSearchInput}
             onChange={(e) => setNodeSearchInput(e.target.value)}
-            placeholder="Type address, entity (e.g. Tornado)..."
-            className="w-full px-2.5 py-1.5 bg-slate-950/90 border border-slate-700/80 rounded-lg text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-cyan-400"
+            placeholder="Type address..."
+            className="w-full px-1.5 py-1 bg-slate-950 border border-slate-700 rounded text-[9px] text-white placeholder-slate-500 focus:outline-none focus:border-slate-400"
             autoFocus
           />
           {nodeSearchInput.trim() && (
-            <div className="max-h-48 overflow-y-auto space-y-1 pt-1">
+            <div className="max-h-40 overflow-y-auto space-y-0.5 pt-0.5">
               {matchingSearchNodes.slice(0, 5).map((n) => (
                 <button
                   key={n.address}
                   onClick={() => handleJumpToNode(n.address)}
-                  className="w-full text-left p-1.5 rounded-lg hover:bg-slate-800/90 flex flex-col font-mono text-xs transition border border-transparent hover:border-slate-700"
+                  className="w-full text-left text-[9px] px-1.5 rounded bg-slate-950/70 border border-slate-700/50 hover:border-slate-600 transition text-slate-300"
                 >
-                  <span className="text-white font-semibold truncate">
+                  <span className="font-semibold truncate">
                     {n.entity && n.entity !== 'Unknown' ? n.entity : shortenAddress(n.address, 8, 6)}
                   </span>
-                  <span className="text-[10px] text-slate-400 truncate">
-                    {shortenAddress(n.address, 10, 8)} &bull; Hop {n.hop_distance ?? 0}
-                  </span>
+                  <span className="text-[9px] text-slate-500 truncate">Hop {n.hop_distance ?? 0}</span>
                 </button>
               ))}
               {matchingSearchNodes.length === 0 && (
-                <div className="text-[11px] text-slate-500 py-2 text-center font-mono">
-                  No matching nodes found
-                </div>
+                <div className="text-[9px] text-slate-500 py-1 text-center">No matching nodes</div>
               )}
             </div>
           )}
         </div>
       )}
 
-      {/* Forensic Classification Legend */}
+      {/* Legend - minimal */}
       {showLegend && (
-        <div className="absolute bottom-12 right-4 z-30 cyber-panel p-3.5 rounded-xl border border-slate-700/90 shadow-2xl backdrop-blur-md w-64 space-y-2.5 text-xs font-mono">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-            <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider">
-              Forensic Legend
-            </span>
-            <button
-              onClick={() => setShowLegend(false)}
-              className="text-slate-400 hover:text-white text-xs px-1"
-            >
-              ✕
-            </button>
+        <div className="absolute bottom-3 right-2 z-30 bg-slate-900 rounded-lg border border-slate-700 p-2.5 text-[9px] shadow-sm">
+          <div className="flex items-center gap-1.5 text-slate-400 border-b border-slate-700/30 pb-1.5 mb-1">
+            <span className="font-bold text-slate-300">Legend</span>
+            <span className="text-xs text-slate-500">Click node to inspect</span>
           </div>
-          <div className="space-y-1.5 text-[11px]">
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded-full bg-cyan-400 border border-white shadow-[0_0_8px_#00f0ff]" />
-              <span className="text-white font-bold">Target Wallet (Origin)</span>
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-500" />
+              <span>Target</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 border border-emerald-300" />
-              <span className="text-slate-300">VASP / Exchange</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-500" />
+              <span>Unknown</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded-full bg-red-600 border border-red-400 shadow-[0_0_6px_#ef4444]" />
-              <span className="text-slate-300">Privacy Mixer</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span>Low Risk</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded-full bg-purple-500 border border-purple-300" />
-              <span className="text-slate-300">Cross-Chain Bridge</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded-full bg-rose-500 border border-rose-300" />
-              <span className="text-slate-300">Scam / Phishing Drainer</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded-full bg-slate-900 border border-dashed border-slate-500" />
-              <span className="text-slate-400">Unattributed Wallet</span>
-            </div>
-            <div className="pt-1 border-t border-slate-800 text-[10px] text-slate-400">
-              <span className="text-red-400 font-bold">Red halo</span>: Critical threat &bull; <span className="text-rose-400 font-bold">Rose halo</span>: High risk
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+              <span>High Risk</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Bottom Status / Navigation Guide */}
-      <div className="absolute bottom-3 left-3 z-10 cyber-panel-subtle px-3 py-1.5 rounded-lg border border-slate-800/80 flex items-center gap-3 text-[10px] font-mono text-slate-400 pointer-events-none">
-        <span className="flex items-center gap-1.5 text-cyan-300 font-semibold">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-          Layered BFS Forensics
+      {/* Bottom Status */}
+      <div className="absolute bottom-2 left-2 z-10 text-[9px] font-mono text-slate-400 pointer-events-none">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+          Layered BFS
         </span>
-        <span className="hidden sm:inline text-slate-600">&bull;</span>
-        <span className="hidden sm:inline">Hop 0 (Top) &rarr; Hop N (Bottom)</span>
-        <span className="hidden sm:inline text-slate-600">&bull;</span>
-        <span className="hidden md:inline">Click node to inspect intelligence</span>
+        <span className="mx-1">•</span>
+        <span>Hop 0 (Top)</span>
       </div>
     </div>
   );

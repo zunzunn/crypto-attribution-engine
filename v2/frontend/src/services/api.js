@@ -83,7 +83,7 @@ export async function checkApiHealth() {
   }
 }
 
-export async function fetchAddressTrace(targetAddress, maxHops = 2, useEtherscan = false) {
+export async function fetchAddressTrace(targetAddress, maxHops = 2, useEtherscan = true) {
   try {
     const res = await client.post('/api/v2/trace', {
       target_address: targetAddress,

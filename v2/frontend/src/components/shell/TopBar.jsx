@@ -2,13 +2,12 @@ import React, { useState } from 'react';
 import {
   Search,
   Bell,
-  Radio,
-  UserCheck,
+  ExternalLink,
   Copy,
   Check,
-  ExternalLink,
-  CheckCircle,
-  AlertCircle
+  UserCheck,
+  Radio,
+  AlertTriangle
 } from 'lucide-react';
 import { shortenAddress } from '../../utils/formatters';
 import RiskBadge from '../common/RiskBadge';
@@ -17,7 +16,7 @@ export default function TopBar({
   activeCase,
   isLive,
   onSearch,
-  _onNewInvestigation,
+  onNewInvestigation,
   collapsed
 }) {
   const [searchInput, setSearchInput] = useState('');
@@ -42,36 +41,36 @@ export default function TopBar({
 
   return (
     <header
-      className={`sticky top-0 z-30 h-16 bg-[#070b14]/90 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-6 flex items-center justify-between gap-4 transition-all duration-300 ${
+      className={`sticky top-0 z-30 h-16 border-b border-border px-4 sm:px-6 flex items-center justify-between gap-4 transition-all duration-300 ${
         collapsed ? 'ml-16' : 'ml-64'
-      }`}
+      } bg-surface/85 backdrop-blur-md`}
     >
       {/* Left: Current Investigation / Case Status */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">
         {activeCase ? (
-          <div className="flex items-center gap-2.5 truncate">
-            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+          <div className="flex items-center gap-2 truncate">
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-surface-subtle text-secondary border border-border">
               {activeCase.case_id || 'ACTIVE CASE'}
             </span>
-            <div className="flex items-center gap-1.5 font-mono text-xs text-white truncate">
-              <span className="truncate hidden sm:inline" title={activeCase.target_address}>
+            <div className="flex items-center gap-1.5 font-mono text-xs text-secondary truncate">
+              <span className="truncate hidden sm:inline text-primary font-semibold" title={activeCase.target_address}>
                 {shortenAddress(activeCase.target_address, 10, 8)}
               </span>
-              <span className="sm:hidden truncate">
+              <span className="sm:hidden truncate text-primary font-semibold">
                 {shortenAddress(activeCase.target_address, 6, 4)}
               </span>
               <button
                 onClick={handleCopyTarget}
-                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-cyan-300 transition"
+                className="p-1 rounded-md hover:bg-surface-subtle text-secondary hover:text-primary transition"
                 title="Copy Target Address"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
               <a
                 href={`https://etherscan.io/address/${activeCase.target_address}`}
                 target="_blank"
                 rel="noreferrer"
-                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-cyan-300 transition"
+                className="p-1 rounded-md hover:bg-surface-subtle text-secondary hover:text-primary transition"
                 title="View on Etherscan"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -84,69 +83,69 @@ export default function TopBar({
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-slate-500" />
-            <span className="font-medium">No Active Case Selected</span>
+          <div className="flex items-center gap-2 text-xs text-secondary">
+            <span className="w-2 h-2 rounded-full bg-slate-400" />
+            <span>No Active Case Selected</span>
           </div>
         )}
       </div>
 
       {/* Center: Global Address Search */}
-      <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-md hidden md:block">
+      <form onSubmit={handleSearchSubmit} className="relative flex-1 max-w-sm w-full sm:w-auto">
         <input
           type="text"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search Ethereum wallet address (0x...) or Case ID..."
-          className="w-full pl-9 pr-4 py-1.5 text-xs font-mono rounded-xl bg-slate-900/90 border border-slate-700/80 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/80 focus:ring-1 focus:ring-cyan-500/40 transition"
+          className="w-full pl-9 pr-3 py-1.5 text-xs font-mono rounded-xl bg-surface border border-border text-primary placeholder-secondary/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-inner"
         />
-        <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+        <Search className="w-3.5 h-3.5 text-secondary absolute left-3 top-2" />
       </form>
 
       {/* Right Controls: Live/Local status, notifications, investigator profile */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {/* Live / Local Indicator */}
         <div
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono ${
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono ${
             isLive
-              ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
-              : 'bg-slate-850 text-slate-400 border-slate-700/60'
+              ? 'bg-blue-500/10 text-blue-500 border-blue-500/30'
+              : 'bg-surface-subtle text-secondary border-border'
           }`}
         >
-          <Radio className={`w-3 h-3 ${isLive ? 'text-cyan-400 animate-pulse' : 'text-slate-500'}`} />
-          <span className="hidden sm:inline">{isLive ? 'ETH MAINNET LIVE' : 'LOCAL CACHED'}</span>
+          <Radio className={`w-3 h-3 ${isLive ? 'text-blue-500 animate-pulse' : 'text-secondary'}`} />
+          <span className="hidden sm:inline font-semibold">{isLive ? 'ETH MAINNET' : 'LOCAL CACHED'}</span>
         </div>
 
         {/* Notifications Popover */}
         <div className="relative">
           <button
             onClick={() => setShowNotifications(!showNotifications)}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 border border-slate-850 transition relative"
+            className="p-2 rounded-xl text-secondary hover:text-primary hover:bg-surface-subtle border border-border transition relative"
             title="System Notifications"
           >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-cyan-400" />
+            <Bell className="w-3.5 h-3.5" />
+            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-blue-500" />
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-72 cyber-panel rounded-xl border border-slate-700/80 shadow-2xl p-3 z-50 text-xs">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
-                <span className="font-bold text-white uppercase text-[10px] tracking-wider">System Feed</span>
-                <span className="text-[10px] text-cyan-400 font-mono">Realtime</span>
+            <div className="absolute right-0 mt-2 w-64 bg-surface rounded-xl border border-border p-3 z-50 text-xs shadow-lg">
+              <div className="flex items-center justify-between border-b border-border pb-2 mb-2">
+                <span className="font-bold text-primary uppercase text-[9px] tracking-wider">System Feed</span>
+                <span className="text-[9px] text-blue-500 font-mono">Realtime</span>
               </div>
               <div className="space-y-2">
-                <div className="flex items-start gap-2 text-slate-300">
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-2 text-secondary">
+                  <Check className="w-3 h-3 text-emerald-500 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="font-medium">Backend Service Ready</p>
-                    <p className="text-[10px] text-slate-400">FastAPI attribution engine running on port 8000</p>
+                    <p className="font-medium text-primary text-xs">Backend Service Ready</p>
+                    <p className="text-[10px] text-secondary">FastAPI attribution engine running</p>
                   </div>
                 </div>
-                <div className="flex items-start gap-2 text-slate-300">
-                  <AlertCircle className="w-3.5 h-3.5 text-cyan-400 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-2 text-secondary">
+                  <AlertTriangle className="w-3 h-3 text-amber-500 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="font-medium">Registry Synchronized</p>
-                    <p className="text-[10px] text-slate-400">VASPs, bridges, and mixer signatures loaded</p>
+                    <p className="font-medium text-primary text-xs">Registry Synchronized</p>
+                    <p className="text-[10px] text-secondary">VASPs, bridges, and mixer signatures loaded</p>
                   </div>
                 </div>
               </div>
@@ -155,13 +154,13 @@ export default function TopBar({
         </div>
 
         {/* Investigator Placeholder */}
-        <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-          <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 text-cyan-400 flex items-center justify-center font-bold text-xs">
-            <UserCheck className="w-4 h-4" />
+        <div className="flex items-center gap-2 pl-2 border-l border-border">
+          <div className="w-7 h-7 rounded-xl bg-surface-subtle border border-border flex items-center justify-center text-secondary font-bold text-xs">
+            <UserCheck className="w-3.5 h-3.5" />
           </div>
-          <div className="hidden lg:block text-left">
-            <span className="text-xs font-semibold text-white block leading-tight">INV-7409</span>
-            <span className="text-[10px] text-slate-400 block leading-tight">Lead Analyst</span>
+          <div className="text-left hidden lg:block">
+            <span className="text-xs font-semibold text-primary block leading-tight">INV-7409</span>
+            <span className="text-[10px] text-secondary block leading-tight">Lead Analyst</span>
           </div>
         </div>
       </div>

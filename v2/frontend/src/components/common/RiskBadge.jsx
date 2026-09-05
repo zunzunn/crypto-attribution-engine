@@ -1,33 +1,49 @@
 import React from 'react';
 import { ShieldAlert, AlertTriangle, AlertCircle, ShieldCheck } from 'lucide-react';
-import { getRiskBadgeStyle } from '../../utils/formatters';
 
 export default function RiskBadge({ level = 'Low', score = null, size = 'sm', showIcon = true }) {
   const normalizedLevel = (level || 'Low').toUpperCase();
 
-  const getIcon = () => {
+  const getRiskStyle = () => {
     switch (normalizedLevel) {
       case 'CRITICAL':
-        return <ShieldAlert className={size === 'xs' ? 'w-3 h-3' : 'w-3.5 h-3.5'} />;
+        return { bg: 'bg-rose-500/15', text: 'text-rose-400', border: 'border-rose-500/30' };
       case 'HIGH':
-        return <AlertTriangle className={size === 'xs' ? 'w-3 h-3' : 'w-3.5 h-3.5'} />;
+        return { bg: 'bg-rose-500/15', text: 'text-rose-400', border: 'border-rose-500/30' };
       case 'MEDIUM':
-        return <AlertCircle className={size === 'xs' ? 'w-3 h-3' : 'w-3.5 h-3.5'} />;
+        return { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' };
       case 'LOW':
       default:
-        return <ShieldCheck className={size === 'xs' ? 'w-3 h-3' : 'w-3.5 h-3.5'} />;
+        return { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30' };
+    }
+  };
+
+  const style = getRiskStyle();
+
+  const getIcon = () => {
+    const iconClass = size === 'xs' ? 'w-2.5 h-2.5' : 'w-3 h-3';
+    switch (normalizedLevel) {
+      case 'CRITICAL':
+        return <ShieldAlert className={iconClass} />;
+      case 'HIGH':
+        return <AlertTriangle className={iconClass} />;
+      case 'MEDIUM':
+        return <AlertCircle className={iconClass} />;
+      case 'LOW':
+      default:
+        return <ShieldCheck className={iconClass} />;
     }
   };
 
   const sizeClass = size === 'xs'
-    ? 'text-[10px] px-1.5 py-0.5 gap-1'
+    ? 'text-[8px] px-1.5 py-0.5 gap-1'
     : size === 'lg'
-    ? 'text-xs px-3 py-1 gap-1.5 font-bold'
-    : 'text-[11px] px-2 py-0.5 gap-1.5 font-semibold';
+    ? 'text-xs px-2.5 py-1 gap-1.5 font-bold'
+    : 'text-[9px] px-2 py-0.5 gap-1 font-medium';
 
   return (
     <span
-      className={`inline-flex items-center rounded-md border font-mono uppercase tracking-wider ${getRiskBadgeStyle(level)} ${sizeClass}`}
+      className={`inline-flex items-center rounded-md border font-medium uppercase tracking-wider ${style.bg} ${style.text} ${style.border} ${sizeClass}`}
     >
       {showIcon && getIcon()}
       <span>{level}</span>
